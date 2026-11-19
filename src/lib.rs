@@ -5,6 +5,7 @@ pub mod settings;
 pub mod state;
 pub mod transport;
 
+pub use client::Client;
 pub use error::{Error, Result};
 pub use settings::Settings;
 pub use state::Htp1State;
