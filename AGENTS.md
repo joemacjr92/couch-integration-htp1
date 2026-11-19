@@ -34,12 +34,17 @@ Media browsing and BEQ catalogue browsing are out of scope.
   Keep that runtime alive for the WebSocket lifetime; do not create and drop a
   runtime for each SDK call.
 - `couch-plugin` and `couch-sdk` are pinned to the same exact Git revision in
-  `Cargo.toml`. Preserve the shared pin unless an SDK update is intentionally
-  reviewed.
+  `Cargo.toml`. The current reviewed Protocol 3 pin is
+  `e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81`; keep both pins and `Cargo.lock`
+  synchronized. The SDK source also contains later protocol APIs, but this
+  package declares and uses Protocol 3 only.
 - Commands refresh device state before acting. A command sends its
   `changemso` patch, requests a fresh snapshot, and verifies the requested
   value before reporting success. Relative volume and mute-toggle decisions
   must use freshly observed state.
+- Command tests use simulated HTP-1 snapshots. Their refresh, patch, and
+  confirmation checks validate the software path; they do not verify behavior
+  on physical HTP-1 hardware.
 - Refresh status and visible inputs from device state. Do not claim successful
   compilation or APK packaging proves device functionality.
 
@@ -50,9 +55,14 @@ Media browsing and BEQ catalogue browsing are out of scope.
 - Mute toggle, mute on, and mute off.
 - Dynamic selection of visible HTP-1 inputs.
 - Status reporting for power, mute, input, and volume.
+- Protocol 3 custom commands for the explicit upmix modes Auro, Dolby, DTS,
+  Native, and Stereo. Each ID maps to a fixed `/upmix/select` replacement and
+  is verified against a refreshed snapshot; the tests use simulated snapshots
+  and do not verify behavior on physical HTP-1 hardware.
 
-Advanced controls including Dirac, upmix, night mode, PEQ, and seat shakers
-are not implemented. Do not advertise them as supported.
+Dirac, night mode, PEQ, and seat-shaker controls are not implemented. The
+`off` and `mono` upmix values remain unresolved and are not advertised. Do not
+add arbitrary `x:` payloads or Protocol 4/5 features in the integration.
 
 ## Development and verification
 

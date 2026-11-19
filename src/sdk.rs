@@ -58,6 +58,18 @@ impl SdkClient {
     }
 }
 
+fn custom_upmix_patch(id: &str) -> Option<(&'static str, Value)> {
+    let mode = match id {
+        "upmix-auro" => "auro",
+        "upmix-dolby" => "dolby",
+        "upmix-dts" => "dts",
+        "upmix-native" => "native",
+        "upmix-stereo" => "stereo",
+        _ => return None,
+    };
+    Some(("/upmix/select", json!(mode)))
+}
+
 impl DeviceClient for SdkClient {
     type Settings = Settings;
 
@@ -73,6 +85,11 @@ impl DeviceClient for SdkClient {
             ("mute", "Toggle mute"),
             ("mute-on", "Mute"),
             ("mute-off", "Unmute"),
+            ("x:upmix-auro", "Upmix: Auro"),
+            ("x:upmix-dolby", "Upmix: Dolby"),
+            ("x:upmix-dts", "Upmix: DTS"),
+            ("x:upmix-native", "Upmix: Native"),
+            ("x:upmix-stereo", "Upmix: Stereo"),
         ]
     }
 
@@ -89,8 +106,20 @@ impl DeviceClient for SdkClient {
     }
 
     fn execute(&mut self, function: &Function) -> couch_sdk::Result<()> {
+        // Reject unknown custom IDs before any device I/O, even when execute is
+        // called directly instead of through the SDK capability gate.
+        let custom_patch = match function {
+            Function::Custom(id) => {
+                Some(custom_upmix_patch(id).ok_or(couch_sdk::Error::Unsupported)?)
+            }
+            _ => None,
+        };
+
         // Relative and toggle commands must use a fresh observation.
         self.refresh()?;
+        if let Some((path, value)) = custom_patch {
+            return self.patch_and_confirm(path, value);
+        }
         match function {
             Function::PowerOn => self.patch_and_confirm("/powerIsOn", json!(true)),
             Function::PowerOff => self.patch_and_confirm("/powerIsOn", json!(false)),
@@ -143,6 +172,7 @@ impl DeviceClient for SdkClient {
                 }
                 self.patch_and_confirm("/input", json!(id))
             }
+            Function::Custom(_) => unreachable!("custom commands were handled above"),
             _ => Err(couch_sdk::Error::Unsupported),
         }
     }
@@ -243,6 +273,8 @@ mod tests {
         let manifest: couch_plugin::Manifest =
             serde_json::from_str(include_str!("../plugin.json")).unwrap();
         manifest.validate().unwrap();
+        assert_eq!(manifest.protocol_version, 3);
+        assert_eq!(manifest.min_core_protocol_version, 3);
         assert_eq!(manifest.id, <SdkClient as DeviceClient>::KIND);
         let manifest_capabilities: Vec<_> = manifest
             .capabilities
@@ -255,5 +287,26 @@ mod tests {
             .collect();
         assert_eq!(manifest_capabilities, sdk_capabilities);
         assert!(manifest.supports_inputs);
+    }
+
+    #[test]
+    fn custom_upmix_ids_map_to_closed_json_patch_operations() {
+        for (id, mode) in [
+            ("upmix-auro", "auro"),
+            ("upmix-dolby", "dolby"),
+            ("upmix-dts", "dts"),
+            ("upmix-native", "native"),
+            ("upmix-stereo", "stereo"),
+        ] {
+            assert_eq!(custom_upmix_patch(id), Some(("/upmix/select", json!(mode))));
+        }
+        assert_eq!(custom_upmix_patch("unknown"), None);
+        assert_eq!(custom_upmix_patch("../powerIsOn"), None);
+    }
+
+    #[test]
+    fn unknown_custom_commands_are_not_advertised() {
+        assert!(!SdkClient::supports(&Function::Custom("unknown".into())));
+        assert!(!SdkClient::supports(&Function::Custom("upmix-mono".into())));
     }
 }

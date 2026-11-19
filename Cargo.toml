@@ -16,8 +16,8 @@ path = "src/main.rs"
 
 [dependencies]
 # Keep both Couch crates pinned to the same reviewed Couch source revision.
-couch-plugin = { git = "https://github.com/Couch-OS/couch.git", rev = "00ab4da2e6336a925e93702507c0b7b233012738" }
-couch-sdk = { git = "https://github.com/Couch-OS/couch.git", rev = "00ab4da2e6336a925e93702507c0b7b233012738" }
+couch-plugin = { git = "https://github.com/Couch-OS/couch.git", rev = "e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81" }
+couch-sdk = { git = "https://github.com/Couch-OS/couch.git", rev = "e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81" }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

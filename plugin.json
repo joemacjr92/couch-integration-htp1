@@ -1,5 +1,5 @@
 {
-  "protocol_version": 2,
+  "protocol_version": 3,
   "id": "monoprice-htp1",
   "label": "Monoprice HTP-1",
   "version": "0.1.0",
@@ -11,7 +11,12 @@
     { "id": "volume-down", "label": "Volume down (1 dB)" },
     { "id": "mute", "label": "Toggle mute" },
     { "id": "mute-on", "label": "Mute" },
-    { "id": "mute-off", "label": "Unmute" }
+    { "id": "mute-off", "label": "Unmute" },
+    { "id": "x:upmix-auro", "label": "Upmix: Auro" },
+    { "id": "x:upmix-dolby", "label": "Upmix: Dolby" },
+    { "id": "x:upmix-dts", "label": "Upmix: DTS" },
+    { "id": "x:upmix-native", "label": "Upmix: Native" },
+    { "id": "x:upmix-stereo", "label": "Upmix: Stereo" }
   ],
   "settings": [
     {
@@ -66,6 +71,6 @@
       "label": "Input"
     }
   ],
-  "min_core_protocol_version": 2,
+  "min_core_protocol_version": 3,
   "actions": []
 }
