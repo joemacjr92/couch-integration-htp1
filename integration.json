@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "protocol_version": 3,
+  "id": "monoprice-htp1",
+  "tier": "preview",
+  "synthetic": false,
+  "cargo_manifest": "Cargo.toml",
+  "cargo_package": "couch-integration-htp1",
+  "binary": "couch-plugin-htp1",
+  "manifest": "plugin.json"
+}

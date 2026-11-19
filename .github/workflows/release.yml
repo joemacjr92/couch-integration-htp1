@@ -1,0 +1,406 @@
+name: Build HTP-1 Integration
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: htp1-pages-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out HTP-1 integration
+        uses: actions/checkout@v4
+        with:
+          path: couch-integration-htp1
+          persist-credentials: true
+
+      - name: Check out pinned Couch SDK
+        uses: actions/checkout@v4
+        with:
+          repository: Couch-OS/couch
+          ref: e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81
+          path: couch-sdk-reference
+
+      - name: Check whether the Pages branch exists
+        id: feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          refs="$(git -C "$PLUGIN" ls-remote --heads origin refs/heads/gh-pages)"
+          if [[ -n "$refs" ]]; then
+            if [[ "$refs" != *$'\trefs/heads/gh-pages' || "$refs" == *$'\n'* ]]; then
+              echo "Unexpected response while checking the gh-pages branch." >&2
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out existing package feed
+        if: steps.feed.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: existing-feed
+
+      - name: Validate existing signed feed history
+        if: steps.feed.outputs.exists == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          FEED_DIR="$GITHUB_WORKSPACE/existing-feed/preview/armv7"
+          FEED_JSON="$FEED_DIR/feed.json"
+          FEED_SIGNATURE="$FEED_DIR/feed.json.sig"
+          APK_INDEX="$FEED_DIR/APKINDEX.tar.gz"
+          PUBLIC_KEY="$GITHUB_WORKSPACE/couch-integration-htp1/keys/monoprice-htp1-repository-public.pem"
+          PACKAGE_LIST="$RUNNER_TEMP/htp1-verified-packages.tsv"
+
+          for required in "$FEED_JSON" "$FEED_SIGNATURE" "$APK_INDEX" "$PUBLIC_KEY"; do
+            test -s "$required" || { echo "Missing or empty existing feed file: $required" >&2; exit 1; }
+          done
+
+          jq -e '
+            .schema == 1 and
+            .channel == "preview" and
+            (.sequence | type == "number" and . >= 1 and . == floor and . < 2147483647) and
+            .index.path == "APKINDEX.tar.gz" and
+            (.index.size | type == "number" and . > 0 and . == floor) and
+            (.index.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+            (.packages | type == "array" and length > 0) and
+            all(.packages[];
+              .id == "monoprice-htp1" and
+              .protocol_version == 3 and
+              .min_core_protocol_version == 3 and
+              (.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and
+              (.apk | type == "string") and
+              (.apk == ("couch-integration-monoprice-htp1-" + .version + "-r0.apk")) and
+              (.size | type == "number" and . > 0 and . == floor) and
+              (.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
+            ) and
+            ([.packages[].apk] | unique | length) == (.packages | length)
+          ' "$FEED_JSON" >/dev/null
+
+          openssl dgst -sha256 -verify "$PUBLIC_KEY" \
+            -signature "$FEED_SIGNATURE" "$FEED_JSON" >/dev/null
+
+          INDEX_SIZE="$(stat -c '%s' "$APK_INDEX")"
+          INDEX_SHA256="$(sha256sum "$APK_INDEX" | awk '{print $1}')"
+          EXPECTED_INDEX_SIZE="$(jq -er '.index.size | numbers' "$FEED_JSON")"
+          EXPECTED_INDEX_SHA256="$(jq -er '.index.sha256 | strings' "$FEED_JSON")"
+          [[ "$INDEX_SIZE" == "$EXPECTED_INDEX_SIZE" && "$INDEX_SHA256" == "$EXPECTED_INDEX_SHA256" ]] || {
+            echo "Existing APKINDEX does not match the signed feed metadata." >&2
+            exit 1
+          }
+
+          jq -er '.packages[] | [.version, .apk, (.size | tostring), .sha256] | @tsv' \
+            "$FEED_JSON" > "$PACKAGE_LIST"
+          while IFS=$'\t' read -r METADATA_VERSION APK_NAME EXPECTED_SIZE EXPECTED_SHA256; do
+            APK_VERSION="${APK_NAME#couch-integration-monoprice-htp1-}"
+            APK_VERSION="${APK_VERSION%-r0.apk}"
+            [[ "$APK_VERSION" == "$METADATA_VERSION" ]] || {
+              printf 'Existing feed version %s does not match APK filename %s.\n' \
+                "$METADATA_VERSION" "$APK_NAME" >&2
+              exit 1
+            }
+            APK_PATH="$FEED_DIR/$APK_NAME"
+            [[ -s "$APK_PATH" ]] || {
+              printf 'Existing feed APK is missing or empty: %s\n' "$APK_NAME" >&2
+              exit 1
+            }
+            APK_SIZE="$(stat -c '%s' "$APK_PATH")"
+            APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
+            [[ "$APK_SIZE" == "$EXPECTED_SIZE" && "$APK_SHA256" == "$EXPECTED_SHA256" ]] || {
+              printf 'Existing feed APK does not match signed metadata: %s\n' "$APK_NAME" >&2
+              exit 1
+            }
+          done < "$PACKAGE_LIST"
+
+          echo "Validated signed existing HTP-1 feed history and all package artifacts."
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-musleabihf
+
+      - name: Set up ARM emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Prepare release version
+        id: version
+        shell: bash
+        env:
+          PUBLISHED_FEED_EXISTS: ${{ steps.feed.outputs.exists }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version tag: $GITHUB_REF_NAME"
+            echo "Use a tag such as v0.1.1"
+            exit 1
+          fi
+
+          PREVIOUS="$GITHUB_WORKSPACE/existing-feed/preview/armv7/feed.json"
+          if [[ "$PUBLISHED_FEED_EXISTS" == "true" ]]; then
+            if [[ ! -s "$PREVIOUS" ]]; then
+              echo "gh-pages exists but does not contain the HTP-1 feed metadata; refusing to treat it as a first release." >&2
+              exit 1
+            fi
+            LATEST="$(jq -r '.packages[] | select(.id == "monoprice-htp1") | .version' "$PREVIOUS" | sort -V | tail -n1)"
+            if [[ -z "$LATEST" || "$(printf '%s\n' "$LATEST" "$VERSION" | sort -V | tail -n1)" != "$VERSION" || "$VERSION" == "$LATEST" ]]; then
+              echo "Release version $VERSION must be newer than the published HTP-1 version $LATEST."
+              exit 1
+            fi
+          elif [[ "$VERSION" != "0.1.1" ]]; then
+            echo "The first trusted-repository release must be v0.1.1; refusing $GITHUB_REF_NAME."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Embed release version in source manifest
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          TEMP="$RUNNER_TEMP/plugin.json"
+          jq -e --arg version "$VERSION" '.version = $version' \
+            "$PLUGIN/plugin.json" > "$TEMP"
+          mv "$TEMP" "$PLUGIN/plugin.json"
+          jq -e --arg version "$VERSION" '
+            .id == "monoprice-htp1" and
+            .version == $version and
+            .executable == "bin/couch-plugin-monoprice-htp1" and
+            .protocol_version == 3 and
+            .min_core_protocol_version == 3
+          ' "$PLUGIN/plugin.json" >/dev/null
+
+      - name: Test executable admission handshake
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="$GITHUB_WORKSPACE/couch-sdk-reference"
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          cd "$SDK/clients"
+          cargo test --locked \
+            --manifest-path "$PLUGIN/Cargo.toml" \
+            --test admission -- --ignored
+
+      - name: Fetch pinned Zig and build ARMv7 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          cd "$GITHUB_WORKSPACE/couch-sdk-reference"
+          tools/fetch-zig.sh
+          . tools/arm-cc-env.sh
+          cd clients
+          cargo build --release --locked \
+            --manifest-path "$PLUGIN/Cargo.toml" \
+            --target-dir "$PLUGIN/target" \
+            --target armv7-unknown-linux-musleabihf \
+            --bin couch-plugin-htp1
+          file "$PLUGIN/target/armv7-unknown-linux-musleabihf/release/couch-plugin-htp1" \
+            | grep -q 'statically linked'
+
+      - name: Prepare and validate signing keys
+        shell: bash
+        env:
+          APK_PRIVATE_KEY: ${{ secrets.APK_PRIVATE_KEY }}
+          APK_PUBLIC_KEY: ${{ secrets.APK_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$APK_PRIVATE_KEY"
+          test -n "$APK_PUBLIC_KEY"
+          install -d -m 700 "$RUNNER_TEMP/apk-keys"
+          printf '%s\n' "$APK_PRIVATE_KEY" > "$RUNNER_TEMP/apk-keys/developer.rsa"
+          printf '%s\n' "$APK_PUBLIC_KEY" > "$RUNNER_TEMP/apk-keys/developer.rsa.pub"
+          chmod 600 "$RUNNER_TEMP/apk-keys/developer.rsa"
+          chmod 644 "$RUNNER_TEMP/apk-keys/developer.rsa.pub"
+
+          PRIVATE_DER_SHA256="$(openssl pkey -in "$RUNNER_TEMP/apk-keys/developer.rsa" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          SECRET_PUBLIC_DER_SHA256="$(openssl pkey -pubin -in "$RUNNER_TEMP/apk-keys/developer.rsa.pub" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          REPOSITORY_PUBLIC_DER_SHA256="$(openssl pkey -pubin -in "$GITHUB_WORKSPACE/couch-integration-htp1/keys/monoprice-htp1-repository-public.pem" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          test "$PRIVATE_DER_SHA256" = "$SECRET_PUBLIC_DER_SHA256"
+          test "$SECRET_PUBLIC_DER_SHA256" = "$REPOSITORY_PUBLIC_DER_SHA256"
+
+      - name: Build and sign ARMv7 APK
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          SDK="$GITHUB_WORKSPACE/couch-sdk-reference"
+          OUTPUT="$PLUGIN/build/integrations"
+          mkdir -p "$OUTPUT"
+
+          docker run --rm --platform linux/arm/v7 \
+            -v "$SDK:/work/sdk:ro" \
+            -v "$PLUGIN:/work/plugin:ro" \
+            -v "$RUNNER_TEMP:/work/tmp:rw" \
+            -v "$OUTPUT:/work/out:rw" \
+            -v "$RUNNER_TEMP/apk-keys:/work/keys:ro" \
+            -e VERSION="$VERSION" \
+            alpine:3.24 sh -eu -c '
+              mkdir -p /root/.abuild
+              cp /work/keys/developer.rsa /root/.abuild/-6afc809d.rsa
+              cp /work/keys/developer.rsa.pub /root/.abuild/-6afc809d.rsa.pub
+              chmod 600 /root/.abuild/-6afc809d.rsa
+              chmod 644 /root/.abuild/-6afc809d.rsa.pub
+              apk add --no-cache alpine-sdk jq binutils
+              cp /root/.abuild/-6afc809d.rsa.pub /etc/apk/keys/
+              cp /work/plugin/keys/monoprice-htp1-repository-public.pem /etc/apk/keys/htp1-repository.rsa.pub
+              sh /work/sdk/tools/integrations/build-apk.sh \
+                monoprice-htp1 \
+                "$VERSION" \
+                /work/plugin/target/armv7-unknown-linux-musleabihf/release/couch-plugin-htp1 \
+                /work/plugin/plugin.json \
+                /root/.abuild/-6afc809d.rsa \
+                /work/out
+              apk --keys-dir /etc/apk/keys verify \
+                "/work/out/couch-integration-monoprice-htp1-$VERSION-r0.apk"
+            '
+
+          APK="$OUTPUT/couch-integration-monoprice-htp1-$VERSION-r0.apk"
+          test -s "$APK"
+          APK_ENTRIES="$(tar -tzf "$APK")"
+          printf '%s\n' "$APK_ENTRIES" | grep '^\.SIGN\.RSA\.' >/dev/null
+          MANIFEST_ENTRY="usr/lib/couch/integrations/monoprice-htp1/manifest.json"
+          BINARY_ENTRY="usr/lib/couch/integrations/monoprice-htp1/bin/couch-plugin-monoprice-htp1"
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx "$MANIFEST_ENTRY" >/dev/null
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx "$BINARY_ENTRY" >/dev/null
+          tar -xOf "$APK" "$MANIFEST_ENTRY" > "$RUNNER_TEMP/apk-manifest.json"
+          tar -xOf "$APK" "$BINARY_ENTRY" > "$RUNNER_TEMP/apk-binary"
+          cmp "$PLUGIN/plugin.json" "$RUNNER_TEMP/apk-manifest.json"
+          cmp "$PLUGIN/target/armv7-unknown-linux-musleabihf/release/couch-plugin-htp1" "$RUNNER_TEMP/apk-binary"
+          echo "Signed HTP-1 APK:"
+          sha256sum "$APK"
+          ls -lh "$APK"
+
+      - name: Build signed preview repository
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
+          SDK="$GITHUB_WORKSPACE/couch-sdk-reference"
+          OUTPUT="$PLUGIN/build/integrations"
+          FEED="$PLUGIN/build/repository/preview"
+          APK_NAME="couch-integration-monoprice-htp1-$VERSION-r0.apk"
+          mkdir -p "$FEED/armv7"
+
+          # Keep already published HTP-1 package versions immutable and available.
+          if [[ "${{ steps.feed.outputs.exists }}" == "true" ]]; then
+            test -d "$GITHUB_WORKSPACE/existing-feed/preview/armv7"
+            while IFS=$'\t' read -r _VERSION PREVIOUS_APK _SIZE _SHA256; do
+              cp -n -- \
+                "$GITHUB_WORKSPACE/existing-feed/preview/armv7/$PREVIOUS_APK" \
+                "$OUTPUT/$PREVIOUS_APK"
+            done < "$RUNNER_TEMP/htp1-verified-packages.tsv"
+          fi
+
+          docker run --rm --platform linux/arm/v7 \
+            -v "$SDK:/work/sdk:ro" \
+            -v "$OUTPUT:/work/packages:ro" \
+            -v "$FEED:/work/repository:rw" \
+            -v "$PLUGIN/keys:/work/repository-keys:ro" \
+            -v "$RUNNER_TEMP/apk-keys:/work/keys:ro" \
+            alpine:3.24 sh -eu -c '
+              mkdir -p /root/.abuild
+              cp /work/keys/developer.rsa /root/.abuild/-6afc809d.rsa
+              cp /work/keys/developer.rsa.pub /root/.abuild/-6afc809d.rsa.pub
+              chmod 600 /root/.abuild/-6afc809d.rsa
+              chmod 644 /root/.abuild/-6afc809d.rsa.pub
+              apk add --no-cache alpine-sdk
+              cp /work/repository-keys/monoprice-htp1-repository-public.pem /etc/apk/keys/htp1-repository.rsa.pub
+              sh /work/sdk/tools/integrations/build-repository.sh \
+                /root/.abuild/-6afc809d.rsa /work/packages /work/repository
+              apk --keys-dir /etc/apk/keys verify /work/repository/armv7/APKINDEX.tar.gz
+            '
+
+          INDEX="$FEED/armv7/APKINDEX.tar.gz"
+          REPO_ARCH="$FEED/armv7"
+          PRIVATE_KEY="$RUNNER_TEMP/apk-keys/developer.rsa"
+          test -s "$INDEX"
+
+          PREVIOUS="$GITHUB_WORKSPACE/existing-feed/preview/armv7/feed.json"
+          SEQUENCE=1
+          if [[ -f "$PREVIOUS" ]]; then
+            PREVIOUS_SEQUENCE="$(jq -er '.sequence | numbers' "$PREVIOUS")"
+            SEQUENCE="$((PREVIOUS_SEQUENCE + 1))"
+          fi
+
+          ISSUED="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          EXPIRES="$(date -u -d '+30 days' +'%Y-%m-%dT%H:%M:%SZ')"
+          INDEX_SIZE="$(stat -c '%s' "$INDEX")"
+          INDEX_SHA256="$(sha256sum "$INDEX" | cut -d ' ' -f 1)"
+          PACKAGES="$RUNNER_TEMP/feed-packages.json"
+          : > "$PACKAGES"
+          for APK in "$REPO_ARCH"/couch-integration-monoprice-htp1-*-r0.apk; do
+            [[ -f "$APK" ]] || continue
+            APK_NAME="$(basename "$APK")"
+            APK_VERSION="${APK_NAME#couch-integration-monoprice-htp1-}"
+            APK_VERSION="${APK_VERSION%-r0.apk}"
+            [[ "$APK_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            APK_SIZE="$(stat -c '%s' "$APK")"
+            APK_SHA256="$(sha256sum "$APK" | cut -d ' ' -f 1)"
+            jq -n \
+              --arg id monoprice-htp1 \
+              --arg version "$APK_VERSION" \
+              --arg apk "$APK_NAME" \
+              --argjson size "$APK_SIZE" \
+              --arg sha256 "$APK_SHA256" \
+              '{id:$id,version:$version,apk:$apk,size:$size,sha256:$sha256,protocol_version:3,min_core_protocol_version:3}' \
+              >> "$PACKAGES"
+          done
+          jq -s 'if length > 0 then . else error("no HTP-1 APKs in feed") end' "$PACKAGES" \
+            > "$RUNNER_TEMP/feed-packages-array.json"
+          jq -n \
+            --arg channel preview \
+            --argjson sequence "$SEQUENCE" \
+            --arg issued "$ISSUED" \
+            --arg expires "$EXPIRES" \
+            --arg index_path APKINDEX.tar.gz \
+            --argjson index_size "$INDEX_SIZE" \
+            --arg index_sha256 "$INDEX_SHA256" \
+            --slurpfile packages "$RUNNER_TEMP/feed-packages-array.json" \
+            '{schema:1,channel:$channel,sequence:$sequence,issued:$issued,expires:$expires,index:{path:$index_path,size:$index_size,sha256:$index_sha256},packages:$packages[0]}' \
+            > "$REPO_ARCH/feed.json"
+
+          openssl dgst -sha256 -sign "$PRIVATE_KEY" \
+            -out "$REPO_ARCH/feed.json.sig" "$REPO_ARCH/feed.json"
+          openssl dgst -sha256 -verify "$RUNNER_TEMP/apk-keys/developer.rsa.pub" \
+            -signature "$REPO_ARCH/feed.json.sig" "$REPO_ARCH/feed.json"
+          echo "Signed HTP-1 preview repository, sequence $SEQUENCE, expires $EXPIRES:"
+          sha256sum "$INDEX" "$REPO_ARCH/feed.json" "$REPO_ARCH/feed.json.sig"
+          ls -lh "$REPO_ARCH"
+
+      - name: Publish repository to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: couch-integration-htp1/build/repository
+          destination_dir: .
+          commit_message: "Publish HTP-1 integration feed"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: couch-integration-htp1/build/integrations/couch-integration-monoprice-htp1-${{ steps.version.outputs.version }}-r0.apk

@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 
 [dev-dependencies]
+couch-plugin = { git = "https://github.com/Couch-OS/couch.git", rev = "e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81", features = ["testing"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "net", "test-util"] }
 
 [profile.release]

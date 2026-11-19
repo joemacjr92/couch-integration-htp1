@@ -1,0 +1,141 @@
+name: HTP-1 client admission
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: htp1-admission-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  COUCH_SDK_REVISION: e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81
+
+jobs:
+  admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out pinned Couch SDK beside integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_dir="$GITHUB_WORKSPACE/../couch-sdk-reference"
+          git init -q "$sdk_dir"
+          git -C "$sdk_dir" fetch -q --depth 1 https://github.com/Couch-OS/couch.git "$COUCH_SDK_REVISION"
+          git -C "$sdk_dir" checkout -q FETCH_HEAD
+          actual="$(git -C "$sdk_dir" rev-parse HEAD)"
+          test "$actual" = "$COUCH_SDK_REVISION"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Validate immutable SDK pin and package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(git -C "$GITHUB_WORKSPACE/../couch-sdk-reference" rev-parse HEAD)" = "$COUCH_SDK_REVISION"
+
+          jq -e '
+            .schema == 1 and
+            .protocol_version == 3 and
+            .id == "monoprice-htp1" and
+            .tier == "preview" and
+            .synthetic == false and
+            .cargo_manifest == "Cargo.toml" and
+            .cargo_package == "couch-integration-htp1" and
+            .binary == "couch-plugin-htp1" and
+            .manifest == "plugin.json"
+          ' integration.json >/dev/null
+
+          jq -e '
+            .protocol_version == 3 and
+            .min_core_protocol_version == 3 and
+            .id == "monoprice-htp1" and
+            .executable == "bin/couch-plugin-monoprice-htp1"
+          ' plugin.json >/dev/null
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Test host build
+        run: cargo test --locked --all-targets
+
+  armv7:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out pinned Couch SDK beside integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_dir="$GITHUB_WORKSPACE/../couch-sdk-reference"
+          git init -q "$sdk_dir"
+          git -C "$sdk_dir" fetch -q --depth 1 https://github.com/Couch-OS/couch.git "$COUCH_SDK_REVISION"
+          git -C "$sdk_dir" checkout -q FETCH_HEAD
+          actual="$(git -C "$sdk_dir" rev-parse HEAD)"
+          test "$actual" = "$COUCH_SDK_REVISION"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-musleabihf
+
+      - name: Build static ARMv7 integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$GITHUB_WORKSPACE"
+          sdk_dir="$GITHUB_WORKSPACE/../couch-sdk-reference"
+          cd "$sdk_dir"
+          tools/fetch-zig.sh
+          . tools/arm-cc-env.sh
+          cd clients
+          cargo build --locked --release \
+            --manifest-path "$source/Cargo.toml" \
+            --target-dir "$source/target" \
+            --target armv7-unknown-linux-musleabihf \
+            --bin couch-plugin-htp1
+          file "$source/target/armv7-unknown-linux-musleabihf/release/couch-plugin-htp1" | grep -q 'statically linked'
+
+      - name: Build static ARMv7 couch-confd
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_dir="$GITHUB_WORKSPACE/../couch-sdk-reference"
+          cd "$sdk_dir"
+          . tools/arm-cc-env.sh
+          cd daemon
+          cargo build --locked --release \
+            --manifest-path "$sdk_dir/daemon/Cargo.toml" \
+            --package couch-confd \
+            --target armv7-unknown-linux-musleabihf
+          file "$sdk_dir/daemon/target/armv7-unknown-linux-musleabihf/release/couch-confd" | grep -q 'statically linked'
+
+      - name: Set up ARM emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Exercise signed package admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="$GITHUB_WORKSPACE"
+          sdk_dir="$GITHUB_WORKSPACE/../couch-sdk-reference"
+          output="$RUNNER_TEMP/htp1-package-smoke"
+          sh "$source/tools/smoke-package.sh" \
+            "$source/target/armv7-unknown-linux-musleabihf/release/couch-plugin-htp1" \
+            "$sdk_dir/daemon/target/armv7-unknown-linux-musleabihf/release/couch-confd" \
+            "$sdk_dir" \
+            "$source/plugin.json" \
+            "$output"
