@@ -167,10 +167,7 @@ impl DeviceClient for SdkClient {
                 if details.get("visible").and_then(Value::as_bool) != Some(true) {
                     return None;
                 }
-                let name = details
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or(id);
+                let name = details.get("label").and_then(Value::as_str).unwrap_or(id);
                 Some(Selectable::new(id.clone(), name))
             })
             .collect())
@@ -188,12 +185,8 @@ fn status_from_state(state: &Htp1State) -> Status {
     status.input = state.input.clone();
 
     let raw = &state.raw;
-    if let (Some(volume), Some(cal)) = (raw.get("volume").and_then(Value::as_f64), raw.get("cal"))
-    {
-        let zero_point = cal
-            .get("zeroPoint")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+    if let (Some(volume), Some(cal)) = (raw.get("volume").and_then(Value::as_f64), raw.get("cal")) {
+        let zero_point = cal.get("zeroPoint").and_then(Value::as_f64).unwrap_or(0.0);
         let minimum = cal.get("vpl").and_then(Value::as_f64);
         if minimum.is_some_and(|minimum| volume <= minimum) {
             status.volume_db = Some(VolumeDb::Minimum);
@@ -243,10 +236,7 @@ mod tests {
             "volume": -80,
             "cal": {"zeroPoint": 0, "vpl": -80}
         }));
-        assert_eq!(
-            status_from_state(&state).volume_db,
-            Some(VolumeDb::Minimum)
-        );
+        assert_eq!(status_from_state(&state).volume_db, Some(VolumeDb::Minimum));
     }
     #[test]
     fn embedded_manifest_matches_the_sdk_contract() {
@@ -266,5 +256,4 @@ mod tests {
         assert_eq!(manifest_capabilities, sdk_capabilities);
         assert!(manifest.supports_inputs);
     }
-
 }
