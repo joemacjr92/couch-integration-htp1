@@ -26,7 +26,10 @@ impl Htp1State {
         state.muted = raw.get("muted").and_then(Value::as_bool);
         state.volume = raw.get("volume").and_then(Value::as_f64);
         state.input = raw.get("input").and_then(Value::as_str).map(str::to_owned);
-        state.upmix_select = raw.pointer("/upmix/select").and_then(Value::as_str).map(str::to_owned);
+        state.upmix_select = raw
+            .pointer("/upmix/select")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         state.night = raw.get("night").and_then(Value::as_str).map(str::to_owned);
         state.current_dirac_slot = raw.pointer("/cal/currentdiracslot").cloned();
         state.raw = raw;

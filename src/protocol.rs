@@ -8,7 +8,7 @@
 
 use serde_json::Value;
 
-use crate::{Error, Result, Htp1State};
+use crate::{Error, Htp1State, Result};
 
 #[derive(Clone, Debug)]
 pub enum ServerMessage {
@@ -190,7 +190,11 @@ fn parse_array_index(segment: &str, len: usize, allow_end: bool) -> Result<usize
         return Err(Error::Protocol);
     }
     let index = segment.parse::<usize>().map_err(|_| Error::Protocol)?;
-    let max = if allow_end { len } else { len.saturating_sub(1) };
+    let max = if allow_end {
+        len
+    } else {
+        len.saturating_sub(1)
+    };
     if index > max || (!allow_end && index >= len) {
         return Err(Error::Protocol);
     }
@@ -203,9 +207,14 @@ mod tests {
 
     #[test]
     fn recognizes_full_state_and_patch_frames() {
-        let full = parse_server_message(r#"mso {"powerIsOn":true,"muted":false,"volume":-30,"input":"h4"}"#).unwrap();
+        let full = parse_server_message(
+            r#"mso {"powerIsOn":true,"muted":false,"volume":-30,"input":"h4"}"#,
+        )
+        .unwrap();
         assert!(matches!(full, ServerMessage::FullState(_)));
-        let patch = parse_server_message(r#"msoupdate [{"op":"replace","path":"/muted","value":true}]"#).unwrap();
+        let patch =
+            parse_server_message(r#"msoupdate [{"op":"replace","path":"/muted","value":true}]"#)
+                .unwrap();
         assert!(matches!(patch, ServerMessage::StatePatch(_)));
         assert_eq!(get_mso_command(), "getmso");
     }

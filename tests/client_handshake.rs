@@ -16,13 +16,19 @@ async fn connects_requests_snapshot_and_processes_incremental_update() {
         let request = socket.next().await.unwrap().unwrap();
         assert_eq!(request.into_text().unwrap(), "getmso");
 
-        socket.send(Message::Text(
-            "mso {\"powerIsOn\":true,\"muted\":false,\"volume\":-30,\"input\":\"h4\"}".into()
-        )).await.unwrap();
+        socket
+            .send(Message::Text(
+                "mso {\"powerIsOn\":true,\"muted\":false,\"volume\":-30,\"input\":\"h4\"}".into(),
+            ))
+            .await
+            .unwrap();
 
-        socket.send(Message::Text(
-            "msoupdate [{\"op\":\"replace\",\"path\":\"/muted\",\"value\":true}]".into()
-        )).await.unwrap();
+        socket
+            .send(Message::Text(
+                "msoupdate [{\"op\":\"replace\",\"path\":\"/muted\",\"value\":true}]".into(),
+            ))
+            .await
+            .unwrap();
     });
 
     let settings = Settings {

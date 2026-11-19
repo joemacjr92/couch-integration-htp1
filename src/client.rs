@@ -26,7 +26,7 @@ impl Client {
             loop {
                 let message = transport.receive_text().await?;
                 match parse_server_message(&message)? {
-                    ServerMessage::FullState(state) => return Ok(state),
+                    ServerMessage::FullState(state) => return Ok::<Htp1State, Error>(state),
                     // Incremental updates cannot be applied until the initial
                     // snapshot has established the document they modify.
                     ServerMessage::StatePatch(_) | ServerMessage::Other(_) => {}

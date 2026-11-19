@@ -59,6 +59,7 @@ fn rejects_invalid_array_indexes() {
     assert!(apply_state_patch(
         &mut state,
         &json!({"op": "replace", "path": "/items/01", "value": 3}),
-    ).is_err());
+    )
+    .is_err());
     assert_eq!(state["items"], json!([1, 2]));
 }

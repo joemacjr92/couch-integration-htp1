@@ -21,7 +21,10 @@ impl Settings {
     pub fn validate(&self) -> Result<()> {
         if self.host.is_empty()
             || self.host.len() > 253
-            || self.host.chars().any(|c| c.is_whitespace() || matches!(c, '/' | '@' | '\\'))
+            || self
+                .host
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, '/' | '@' | '\\'))
             || self.port == 0
         {
             return Err(Error::Invalid);
@@ -32,7 +35,10 @@ impl Settings {
     pub fn websocket_url(&self) -> Result<String> {
         self.validate()?;
         let scheme = if self.use_tls { "wss" } else { "ws" };
-        Ok(format!("{scheme}://{}:{}/ws/controller", self.host, self.port))
+        Ok(format!(
+            "{scheme}://{}:{}/ws/controller",
+            self.host, self.port
+        ))
     }
 }
 
@@ -42,9 +48,23 @@ mod tests {
 
     #[test]
     fn builds_expected_websocket_urls() {
-        let plain = Settings { host: "htp1.local".into(), port: 80, use_tls: false };
-        let tls = Settings { host: "10.0.0.8".into(), port: 443, use_tls: true };
-        assert_eq!(plain.websocket_url().unwrap(), "ws://htp1.local:80/ws/controller");
-        assert_eq!(tls.websocket_url().unwrap(), "wss://10.0.0.8:443/ws/controller");
+        let plain = Settings {
+            host: "htp1.local".into(),
+            port: 80,
+            use_tls: false,
+        };
+        let tls = Settings {
+            host: "10.0.0.8".into(),
+            port: 443,
+            use_tls: true,
+        };
+        assert_eq!(
+            plain.websocket_url().unwrap(),
+            "ws://htp1.local:80/ws/controller"
+        );
+        assert_eq!(
+            tls.websocket_url().unwrap(),
+            "wss://10.0.0.8:443/ws/controller"
+        );
     }
 }
