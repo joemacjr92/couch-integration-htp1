@@ -71,3 +71,19 @@ creation or signing. Packaging success does not establish device functionality.
 - The repository README still describes the original scaffold as incomplete;
   this status file records the later implementation context supplied for this
   branch. Update that older overview only after reviewing its intended role.
+
+## Protocol 3 / custom command research
+
+Completed an architecture-only review of the project's pinned Couch SDK and a
+newer Couch source tree. The report is in
+[`docs/PROTOCOL3_X_COMMANDS_RESEARCH.md`](docs/PROTOCOL3_X_COMMANDS_RESEARCH.md).
+The integration is pinned to Couch revision
+`00ab4da2e6336a925e93702507c0b7b233012738` (Protocol 2); the inspected later
+source at `e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81` contains Protocol 3 `x:`
+commands. A P3 migration requires an approved SDK pin and target-runtime
+compatibility check. x commands are fixed declared IDs without arbitrary
+payloads, so they could map to verified discrete HTP-1 choices. Snapshot
+fixtures establish observation only, not safe write semantics. The newer Couch
+source has a docs-versus-model-test inconsistency about x commands in activity
+sequences/scenes; custom-page support should be confirmed against the target
+release. No implementation or hardware test was performed.
