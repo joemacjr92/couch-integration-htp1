@@ -327,7 +327,7 @@ jobs:
               chmod 600 /root/.abuild/-6afc809d.rsa
               chmod 644 /root/.abuild/-6afc809d.rsa.pub
               apk add --no-cache alpine-sdk
-              cp /work/repository-keys/monoprice-htp1-repository-public.pem /etc/apk/keys/htp1-repository.rsa.pub
+              cp /work/repository-keys/monoprice-htp1-repository-public.pem /etc/apk/keys/-6afc809d.rsa.pub
               sh /work/sdk/tools/integrations/build-repository.sh \
                 /root/.abuild/-6afc809d.rsa /work/packages /work/repository
               apk --keys-dir /etc/apk/keys verify /work/repository/armv7/APKINDEX.tar.gz
