@@ -3,11 +3,11 @@
 ## Repository snapshot
 
 - Branch: `feature/htp1-state-sync`
-- HEAD: `e39c149701f261c9e9f716fc0c4bc6b96c0e945e` — “Add Protocol 3 deployment checksum safeguards”; includes P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69`.
+- HEAD: `f17660b3422cf132c9c03c907aa6a6188d4c6497` — “Record fresh Protocol 3 APK build results”; includes P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69`.
 - Main remains at its original scaffold commit: `00b60da88f89800f861062f68bd5cd007973877e` (`Initial HTP-1 integration scaffold`).
 - Protocol 3 runtime support is confirmed by the reviewed SDK/source, and the
-  HA100 runtime is reported to support Protocols 1 through 5. P3 package
-  admission on the HA100 and physical HTP-1 behavior remain unverified.
+  HA100 runtime is reported to support Protocols 1 through 5. The owner reports
+  successful P3 installation and functional validation on the HA100.
 - Integration package version remains `0.1.0`; manifest `protocol_version` and
   `min_core_protocol_version` are both 3.
 - Both Couch dependencies are pinned to
@@ -29,6 +29,8 @@
   `x:upmix-dts`, `x:upmix-native`, and `x:upmix-stereo`. Each maps to a fixed
   replace operation on `/upmix/select`; command handling refreshes before the
   patch, then requests and verifies a fresh snapshot.
+- The owner reports that basic controls work and all five Activity-page `x:`
+  upmix commands were tested successfully on the HA100 with the HTP-1.
 - Dirac, night mode, PEQ, and seat-shaker controls remain unimplemented. The
   `off` and `mono` upmix values are intentionally omitted pending resolution
   of the documented/original integration discrepancy.
@@ -48,52 +50,53 @@ physical HTP-1 hardware.
 ## Build and packaging
 
 The packaging mismatch was corrected earlier by changing only `plugin.json`'s
-`executable` field to `bin/couch-plugin-monoprice-htp1`. A fresh signed P3 APK
-was built from this branch with `tools/build-deploy.sh`:
+`executable` field to `bin/couch-plugin-monoprice-htp1`. The owner reports that
+the following P3 package was installed and functionally validated on the HA100:
+
+```text
+Filename: couch-integration-monoprice-htp1-0.1.0-r0.apk
+Version: 0.1.0-r0
+Protocol: 3
+Source commit reported for the installed build: 096d8d9cf83c54b27858ac9260f9a2ce91a8af69
+User-reported installed APK SHA-256: f688ef28bf6e1cc2931a5536c709edb29cef15b2e0d79a6f8f2ae21c04951089
+```
+
+The user-reported installed APK hash has **not** been matched to a local APK
+artifact. A local file with the same filename and version is present at:
 
 ```text
 /home/joe/couch-dev/couch-integration-htp1/build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk
-SHA-256: 07ccc743192ce34fecabc640a239a69d09e0a0bd7ce8a178ec338c0927ab84d2
-Size: 654,484 bytes
-Package: couch-integration-monoprice-htp1 0.1.0-r0 (armv7)
-Manifest: id monoprice-htp1, Protocol 3, executable bin/couch-plugin-monoprice-htp1
-Signature: verified locally with apk-tools and the matching public key
+Local APK SHA-256: eb2b41dfbdd467df6076145d93f38af2057a90102ac9fb6b0cbafdbf38285ac2
+Size: 654,482 bytes
 ```
 
-The previous Protocol 2 APK was preserved at:
-
-```text
-/home/joe/couch-dev/couch-integration-htp1/build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk.pre-p3-29002fc8
-SHA-256: 29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460
-Size: 588,792 bytes
-```
+The local APK hash differs from the user-reported installed APK hash; the two
+artifacts must not be treated as identical. The installed artifact's source
+commit has not been independently verified against its APK bytes.
 
 The Cargo target remains named `couch-plugin-htp1`; the APK contains the
 ID-derived executable at `usr/lib/couch/integrations/monoprice-htp1/bin/couch-plugin-monoprice-htp1`.
-The extracted executable is a statically linked ARM EABI5 32-bit ELF. No
-Protocol 3 package has been deployed or admitted on the HA100.
+The extracted executable is a statically linked ARM EABI5 32-bit ELF. The
+package metadata identifies the local artifact as `armv7`.
 
 Alpine `abuild` warned that the payload is not in `$source/$install/$triggers`,
 that no maintainer is set, and that APKINDEX files were unavailable from cache
 before proceeding. These warnings did not prevent package creation or signing.
-The build script warned that successful packaging does not establish physical
-HTP-1 functionality or validate device command responses. The deployment prompt
-was declined. Packaging and local signature verification do not establish
-device functionality.
+The build script correctly warns that packaging alone does not establish
+physical HTP-1 functionality or validate device command responses. Those
+behaviors are reported separately above based on the owner's hardware test.
 
 ## Outstanding work and next steps
 
-1. After separate deployment approval, perform the key-only SSH preflight and
-   validate P3 package admission on the HA100 using the recorded APK hash.
-2. After separate physical-validation approval, verify HTP-1 connection,
-   snapshot state, and requested device responses.
-3. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
+1. Preserve the tested `0.1.0-r0` P3 source as a reviewed Git checkpoint after
+   confirming the installed artifact identity and approving the commit/tag.
+2. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
    remain in scope; do not infer `off`/`mono` behavior.
 
 ## Uncertainties
 
-- The P3 APK is built and locally signature-verified, but package admission on
-  the HA100 and HTP-1 upmix patch behavior remain unverified on hardware.
+- The user-reported installed APK SHA-256 has not been matched to the local APK
+  with the same filename and version.
 - The repository README still describes the original scaffold as incomplete;
   this status file records the later implementation context supplied for this
   branch. Update that older overview only after reviewing its intended role.
@@ -109,36 +112,34 @@ both `couch-plugin` and `couch-sdk` to reviewed revision
 source provides `Function::Custom` and accepts P3 manifests; although it
 contains APIs for later protocols, this package does not use P4/P5 features.
 The five requested upmix IDs are implemented as a closed capability set. The
-report's source inconsistency about activity/scene picker behavior remains
-relevant to validating the target CouchOS UI. The target HA100 has previously
-been reported to support Protocols 1–5; this implementation has not been
-deployed or tested against an HTP-1.
+report's source inconsistency about activity/scene picker behavior is resolved
+for this installed build by the owner's successful Activity-page tests. The
+owner reports successful
+installation and hardware testing of this implementation on the HTP-1; those
+results are recorded above.
 
 ## Deployment preparation
 
 Prepared the reviewable deployment procedure and separate live-validation
 checklist in
 [`docs/DEPLOYMENT_AND_LIVE_VALIDATION.md`](docs/DEPLOYMENT_AND_LIVE_VALIDATION.md).
-The fresh P3 APK and its SHA-256 are recorded above; the prior Protocol 2 APK
-is retained under a `.pre-p3-29002fc8` suffix. The supported deployment path is
+The P3 APK filename, reported installed hash, source commit, and distinct local
+APK hash are recorded above. The supported deployment path is
 non-interactive SSH plus CouchOS
 `couch-confd integrations install-sideload`, which verifies signature, package
 contents, and protocol handshake; package-manager rollback is documented. The
-owner reports that
-dedicated Ed25519 key authentication was verified using a non-interactive
-remote command (`SSH key authentication succeeded`, `root`, `couch`). The HA100
-has a PTY allocation issue, so deployment instructions require `ssh -F
+owner reports successful dedicated Ed25519 key authentication using the
+non-interactive remote command (`SSH key authentication succeeded`, `root`,
+`couch`). The HA100 has a PTY allocation issue, so deployment instructions
+require `ssh -F
 /dev/null -T`, an explicit command, that identity, strict host-key checking,
-and non-interactive SSH streaming for file transfer; they avoid SCP and PTYs.
-The owner reports public-key enrollment and successful key-only access; no HTP-1
-package installation or HTP-1 control was performed. Per the owner, this is a
-first installation and no HTP-1 integration package is installed; the SSH
-preflight must verify its absence before transfer. The existing verified APK
-version is used without a version bump. First-install
-recovery is package removal (which preserves saved connections); no prior
-package version exists for rollback. Production log retrieval remains
-unverified. Live HTP-1 WebSocket and control behavior still requires hardware
-validation.
+and non-interactive key-only transfers. The build script uses SCP in batch mode
+with the dedicated identity and the same host-key safeguards. The owner reports
+public-key enrollment and successful key-only access. The owner now reports
+successful first installation and live validation of basic
+controls and all five Activity-page upmix commands. The documented first-install
+rollback remains package removal, preserving saved connections. Production log
+retrieval has not been verified.
 
 The dedicated client key is at `~/.ssh/id_ed25519_ha100`. Its public half was
 enrolled through CouchOS Remote settings → SSH, as confirmed by the reported

@@ -92,9 +92,12 @@ For all HA100 deployment and validation commands, use non-interactive SSH only:
 `StrictHostKeyChecking=yes`. Use batch public-key-only authentication
 (`PasswordAuthentication=no`, `PreferredAuthentications=publickey`). The HA100
 has a PTY allocation issue; never use `ssh -t`, `ssh -tt`, an interactive shell,
-or PTY-dependent commands. Transfer files non-interactively over SSH; do not
-rely on SCP. Do not change system SSH configuration to work around the PTY
-issue. The owner reported a successful key-only remote-command test returning
+or PTY-dependent commands. The deployment script transfers files with SCP in
+batch mode using the dedicated identity, explicit known-hosts file, strict
+host-key checking, and public-key-only authentication. Non-interactive SSH
+streaming is also available for explicit remote commands. Do not change system
+SSH configuration to work around the PTY issue. The owner reported a
+successful key-only remote-command test returning
 `SSH key authentication succeeded`, `root`, and `couch`. This does not authorize
 deployment; installation or any other HA100 change still requires explicit
 approval.

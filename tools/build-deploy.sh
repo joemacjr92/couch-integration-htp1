@@ -91,9 +91,7 @@ log "Compiling plugin for $TARGET"
   # shellcheck disable=SC1091
   . tools/arm-cc-env.sh
   cd clients
-  CARGO_ARGS=(build --release --target "$TARGET" --manifest-path "$PLUGIN_ROOT/Cargo.toml")
-  [[ ! -f "$PLUGIN_ROOT/Cargo.lock" ]] || CARGO_ARGS+=(--locked)
-  cargo "${CARGO_ARGS[@]}"
+  cargo build --release --locked --target "$TARGET" --manifest-path "$PLUGIN_ROOT/Cargo.toml"
 )
 BINARY="$PLUGIN_ROOT/target/$TARGET/release/couch-plugin-htp1"
 [[ -f "$BINARY" ]] || die "Cargo did not produce $BINARY"
@@ -140,6 +138,7 @@ printf '\nWARNING: A successful build and package operation does not establish p
 read -r -p "Deploy this package to the HA100 now? [y/N]: " DEPLOY
 if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   need ssh
+  need scp
   read -r -p "HA100 IP/hostname [$DEVICE_DEFAULT]: " DEVICE
   DEVICE="${DEVICE:-$DEVICE_DEFAULT}"
   SSH_ARGS=(
@@ -149,12 +148,23 @@ if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
     -o StrictHostKeyChecking=yes
     -o IdentitiesOnly=yes
     -o BatchMode=yes
-    -o PasswordAuthentication=no
     -o PreferredAuthentications=publickey
+    -o PasswordAuthentication=no
+  )
+  SCP_ARGS=(
+    -B
+    -F /dev/null
+    -i "$HOME/.ssh/id_ed25519_ha100"
+    -o "UserKnownHostsFile=$HOME/.ssh/known_hosts"
+    -o StrictHostKeyChecking=yes
+    -o IdentitiesOnly=yes
+    -o BatchMode=yes
+    -o PreferredAuthentications=publickey
+    -o PasswordAuthentication=no
   )
   [[ -r "$HOME/.ssh/id_ed25519_ha100" ]] || die "Dedicated HA100 SSH identity is not readable."
   [[ -r "$HOME/.ssh/known_hosts" ]] || die "Explicit known_hosts file is not readable."
-  ha100_ssh() { ssh "${SSH_ARGS[@]}" "root@$DEVICE" "$@"; }
+  ha100_ssh() { ssh -T "${SSH_ARGS[@]}" "root@$DEVICE" "$@"; }
   PROTOCOL_VERSION="$(sed -nE 's/^[[:space:]]*"protocol_version"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$PLUGIN_ROOT/plugin.json" | head -n1)"
   [[ -n "$PROTOCOL_VERSION" ]] || die "Could not read protocol_version from plugin.json."
   log "Checking protocol $PROTOCOL_VERSION support on root@$DEVICE"
@@ -166,8 +176,8 @@ if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   fi
   log "Confirmed $ID is absent before first-install staging."
   ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
-  ha100_ssh 'cat > /opt/couch/integration-keys/custom/developer/developer.rsa.pub' < "$PUBLIC_KEY"
-  ha100_ssh "cat > /tmp/$APK_NAME" < "$APK_PATH"
+  scp "${SCP_ARGS[@]}" "$PUBLIC_KEY" "root@$DEVICE:/opt/couch/integration-keys/custom/developer/-6afc809d.rsa.pub"
+  scp "${SCP_ARGS[@]}" "$APK_PATH" "root@$DEVICE:/tmp/$APK_NAME"
   LOCAL_APK_CHECKSUM="$(sha256sum "$APK_PATH")" || die "Could not calculate local APK SHA-256."
   LOCAL_APK_SHA256="${LOCAL_APK_CHECKSUM%%[[:space:]]*}"
   [[ "$LOCAL_APK_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || die "Local APK checksum did not produce a valid SHA-256 hash."

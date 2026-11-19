@@ -1,21 +1,22 @@
 # HTP-1 deployment preparation and live validation
 
-**Preparation snapshot:** 2026-11-19
-**Repository:** `feature/htp1-state-sync` at deployment safeguards commit `e39c149701f261c9e9f716fc0c4bc6b96c0e945e` (`Add Protocol 3 deployment checksum safeguards`)
+**Preparation snapshot:** 2026-11-19 (original first-install plan)
+**Current repository:** `feature/htp1-state-sync` at `f17660b3422cf132c9c03c907aa6a6188d4c6497` (`Record fresh Protocol 3 APK build results`)
 **HA100 address:** `10.0.0.25`
-**P3 APK:** `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk`
-
-**SHA-256:** `07ccc743192ce34fecabc640a239a69d09e0a0bd7ce8a178ec338c0927ab84d2` (654,484 bytes)
+**Owner-reported installed package:** `couch-integration-monoprice-htp1-0.1.0-r0.apk`, Protocol 3
+**Source commit reported for installed package:** `096d8d9cf83c54b27858ac9260f9a2ce91a8af69` (not independently verified against the APK bytes)
+**User-reported installed APK SHA-256:** `f688ef28bf6e1cc2931a5536c709edb29cef15b2e0d79a6f8f2ae21c04951089` (not matched to a local APK)
+**Current local APK:** `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk`, SHA-256 `eb2b41dfbdd467df6076145d93f38af2057a90102ac9fb6b0cbafdbf38285ac2` (654,482 bytes; differs from the reported installed APK)
 
 ## Current local verification
 
 - Branch and HEAD were inspected; the worktree was clean before building. The fresh package is from the current committed P3 source.
-- The APK was built and signed by `tools/build-deploy.sh`. Its manifest declares Protocol 3, ID `monoprice-htp1`, version `0.1.0`, and executable `bin/couch-plugin-monoprice-htp1`; package metadata says `armv7`, and the extracted executable is a statically linked ARM EABI5 32-bit ELF. Local `apk verify` with the matching public key returned `OK`.
-- The prior Protocol 2 artifact was preserved as `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk.pre-p3-29002fc8`; it is not the deployment candidate.
-- The owner subsequently reported a successful non-interactive key-only SSH command returning `SSH key authentication succeeded`, `root`, and `couch`. No deployment preflight inventory was run for this document. Per the current project owner, this is a first install; the preflight below must verify that no `monoprice-htp1` row exists before transfer. The exact runtime build, saved connection, and target signing trust-key state remain to be confirmed.
+- The local artifact currently present has package metadata for `monoprice-htp1` version `0.1.0-r0` on `armv7`. Its hash differs from the user-reported installed artifact hash; do not treat the local file as the installed APK. The owner reports that the installed P3 package was sourced from commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69`, but that source attribution has not been independently established from the APK.
+- The owner reports a successful non-interactive key-only SSH command returning `SSH key authentication succeeded`, `root`, and `couch`, as well as successful HTP-1 installation and functional validation. Codex has not independently run the installation preflight or contacted the HA100 during this documentation update.
+- The preflight below preserves the original first-install procedure. Since the owner now reports that `monoprice-htp1` is installed, its absence check is expected to fail on the current device; do not rerun it as though this were still a first install. The exact runtime build, saved connection, and target signing trust-key state have not been independently recorded here.
 - The integration manifest requests Protocol 3. The target has been reported to support Protocols 1 through 5; Protocol 3 is the required package compatibility gate. Recheck Protocol 3 support on the target runtime immediately before installation.
 
-All commands below are proposals for a separately approved deployment window. No SSH command, transfer, install, restart, stop, remove, or configuration edit was performed by Codex while preparing this document. The owner separately reports that key-only SSH authentication works.
+The command sequence below records the original first-install procedure for reference and for a future separately approved recovery/reinstallation plan. It is not a proposal to install over the currently reported installed package. Codex did not execute the sequence while preparing or updating this document.
 
 Define this helper in the local shell before using the command examples. Each invocation runs one explicit remote command without allocating a PTY; `BatchMode`, `PasswordAuthentication=no`, and `PreferredAuthentications=publickey` ensure these operations use the verified key only. The explicit known-hosts file and strict checking remain enabled.
 
@@ -34,9 +35,9 @@ ha100_ssh() {
 }
 ```
 
-## Supported deployment mechanism
+## Supported deployment mechanism and SSH safeguards
 
-CouchOS's development packaging guidance documents signed APK sideload over SSH. The HA100 has a PTY allocation issue: interactive sessions fail with `PTY allocation request failed on channel 0`, while non-interactive key-authenticated remote commands work. All HA100 SSH operations in this procedure therefore use `ssh -F /dev/null -T`, the dedicated `~/.ssh/id_ed25519_ha100` identity, explicit `~/.ssh/known_hosts`, strict host-key checking, and public-key-only batch authentication. Do not use an interactive shell, `ssh -t`/`-tt`, or SCP. Transfer files by streaming them over non-interactive SSH to an explicit remote `cat` command.
+CouchOS's development packaging guidance documents signed APK sideload. The HA100 has a PTY allocation issue: interactive sessions fail with `PTY allocation request failed on channel 0`, while non-interactive key-authenticated remote commands work. Remote commands use `ssh -F /dev/null -T`, the dedicated `~/.ssh/id_ed25519_ha100` identity, explicit `~/.ssh/known_hosts`, strict host-key checking, batch mode, and public-key-only authentication. Do not use an interactive shell, `ssh -t`/`-tt`, or PTY-dependent commands. The current build script transfers files with SCP in batch mode, using `-F /dev/null`, the same dedicated identity and known-hosts file, strict host-key checking, `BatchMode=yes`, and public-key-only authentication (`PasswordAuthentication=no`, `PreferredAuthentications=publickey`). SCP is non-interactive and does not request a PTY. The documented manual transfer below uses the same key-only safeguards.
 
 In the normal HA100 Alpine environment, invoke the signed package installation as this explicit remote command:
 
@@ -48,7 +49,7 @@ ha100_ssh "/opt/couch/runtime/current/couch-confd integrations \
 
 `APK_NAME` is set from the freshly built P3 artifact in the transfer step below.
 
-The same procedure is present in this repository's `tools/build-deploy.sh` (optional path, default HA100 `10.0.0.25`) and CouchOS `docs/development/packaging.md:144-215` / `docs/integration-packages.md:253-274`. Package admission verifies the APK signature, audits its payload, checks its protocol handshake, and only then activates it. **Do not use `apk add`**; CouchOS documentation says that bypasses the package audit, handshake, immutable slots, activation record, saved-settings compatibility check, and rollback mechanism.
+The optional deployment path in this repository's `tools/build-deploy.sh` (default HA100 `10.0.0.25`) uses SCP for transfer, verifies local and remote APK SHA-256 values, then calls the CouchOS sideload command. CouchOS documentation is in `docs/development/packaging.md:144-215` and `docs/integration-packages.md:253-274`. Package admission verifies the APK signature, audits its payload, checks its protocol handshake, and only then activates it. **Do not use `apk add`**; CouchOS documentation says that bypasses the package audit, handshake, immutable slots, activation record, saved-settings compatibility check, and rollback mechanism.
 
 The documented SSH example assumes root login into the normal Alpine environment. If the SSH shell is the outer initramfs/recovery shell instead, the CouchOS guide requires the separate `chroot /mnt/alpine` procedure. This plan is for normal SSH only and must stop if `/etc/alpine-release` is absent; do not improvise recovery-shell paths.
 
@@ -104,7 +105,7 @@ Before transferring anything:
 
 ### 3. Verify local artifact and transfer (future, after approval)
 
-The build script defaults to the public key at `$HOME/.abuild/-6afc809d.rsa.pub` and copies that public key to the dedicated developer trust directory. Never transfer or display the private signing key.
+The build script defaults to the public key at `$HOME/.abuild/-6afc809d.rsa.pub` and stages it in the developer trust directory under its actual APK signer filename, `-6afc809d.rsa.pub`. It does not target or overwrite the separate `developer.rsa.pub` file. Never transfer or display the private signing key.
 
 ```bash
 APK=build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk
@@ -114,14 +115,25 @@ sha256sum "$APK"
 test -r "$PUBLIC_KEY"
 ```
 
-The fresh P3 APK hash is recorded at the top of this document. Recalculate the local hash immediately before transfer and compare it with the remote hash after streaming. Proceed only if the public key is readable and both hashes match. After all read-only preflight gates pass, the documented development procedure creates the custom key directory and transfers the public key and package:
+The installed APK's reported hash and the distinct current local APK hash are recorded at the top of this document. Recalculate the local hash immediately before transfer and compare it with the remote hash afterward. Proceed only if the public key is readable and both APK hashes match. After the applicable read-only preflight gates pass, the script creates the custom key directory and uses SCP to transfer the public key and package. This manual example applies the same SSH safeguards:
 
 ```bash
+ha100_scp() {
+  scp -B -F /dev/null \
+    -i "$HOME/.ssh/id_ed25519_ha100" \
+    -o "UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+    -o StrictHostKeyChecking=yes \
+    -o IdentitiesOnly=yes \
+    -o BatchMode=yes \
+    -o PreferredAuthentications=publickey \
+    -o PasswordAuthentication=no \
+    "$@"
+}
+
 ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
-ha100_ssh 'cat > /opt/couch/integration-keys/custom/developer/developer.rsa.pub' \
-  < "$PUBLIC_KEY"
-ha100_ssh "cat > /tmp/$APK_NAME" \
-  < "$APK"
+ha100_scp "$PUBLIC_KEY" \
+  "root@$HA100:/opt/couch/integration-keys/custom/developer/-6afc809d.rsa.pub"
+ha100_scp "$APK" "root@$HA100:/tmp/$APK_NAME"
 REMOTE_CHECKSUM="$(ha100_ssh "sha256sum /tmp/$APK_NAME")" || {
   printf 'ERROR: remote checksum command failed; do not install.\n' >&2
   exit 1
@@ -168,7 +180,7 @@ ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list'
 
 CouchOS admission performs the package protocol handshake, but the HTP-1 WebSocket client connects when Couch first asks the integration for status or inputs. Use the paired CouchOS UI's saved integration connection and read-only **Refresh status** / input enumeration to exercise startup and device connection. Do not create duplicate connections or change a saved HTP-1 address without reviewing the current connection first.
 
-This is a first install, so there is no prior integration version for `integrations rollback` to restore. If live validation fails after package activation, the supported first-install recovery is to remove the newly installed package, then verify it is absent and the saved connection remains. This is a future recovery action and requires explicit authorization; it was not performed during preparation:
+For the original first-install procedure, there was no prior integration version for `integrations rollback` to restore. If recovery is needed for the currently reported installation, removal is the documented first-install recovery: remove the package, then verify it is absent and the saved connection remains. This is a future recovery action and requires explicit authorization; Codex has not performed it:
 
 ```sh
 ha100_ssh \
@@ -187,9 +199,9 @@ The package guide states removal retains saved connection records, while integra
 
 ## Separate live validation checklist
 
-Physical HTP-1 validation is a future action requiring separate explicit approval; deployment approval alone does not authorize device controls. Perform this checklist only after separate deployment and physical-validation approval, package admission, and selection/review of the intended HTP-1 connection. Record pass/fail, observed values, timestamp, and UI/CLI errors without including credentials.
+The owner reports that the HTP-1 was successfully installed and functionally tested: basic controls work, and all five Activity-page `x:` commands passed. Codex did not independently connect to the HA100 or repeat these tests. The checklist below is retained for the original validation record and any future retest; a retest still requires separate approval and review of the intended HTP-1 connection. Record pass/fail, observed values, timestamp, and UI/CLI errors without including credentials.
 
-### Connection and state (read-only)
+### Connection and state (read-only checklist; detailed outcomes not independently recorded)
 
 - [ ] `ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list'` shows `monoprice-htp1` at the expected manifest version.
 - [ ] CouchOS recognizes the package in its Integrations/Connections UI.
@@ -201,26 +213,28 @@ Physical HTP-1 validation is a future action requiring separate explicit approva
 - [ ] Visible inputs enumerate and match the HTP-1's current input set.
 - [ ] Record any disconnect, timeout, protocol, missing-field, or invalid-state messages before trying a control.
 
-### Basic controls (after read-only connection checks pass)
+### Basic controls and Activity commands (owner-reported summary; detailed checklist retained)
 
+- [x] The owner reports that basic controls work.
 - [ ] Mute on/off works and is confirmed by refreshed status.
 - [ ] If safe for the current listening conditions, change volume by one 1 dB step and confirm status; restore the starting level if the owner wants it restored.
 - [ ] Change input only after the owner selects a safe, known input and accepts the playback interruption; verify the resulting input by refreshed status.
 - [ ] Test power only if the owner explicitly approves the interruption and the receiver's current state makes the test safe. Confirm state after the command.
-- [ ] Do not test Dirac, upmix, night mode, PEQ, seat shakers, or any Protocol 3 custom commands in this first validation.
+- [ ] Dirac, night mode, PEQ, and seat-shaker features are outside the implemented/tested scope; do not infer that they work.
+- [x] Owner reports all five implemented Activity-page commands passed: `x:upmix-auro`, `x:upmix-dolby`, `x:upmix-dts`, `x:upmix-native`, and `x:upmix-stereo`.
 
 ## Unknowns and review gates
 
-- The owner reports successful key-only SSH access, but Codex has not run the deployment preflight. The exact installed CouchOS build, package absence, signing trust-key state, and saved connection settings remain to be confirmed. Per the owner, this is a first install and there is no prior HTP-1 package version to roll back to.
+- The owner reports successful key-only SSH access, installation, and functional testing. Codex has not run the deployment preflight or independently recorded the exact installed CouchOS build, signing trust-key state, or saved connection settings. The preflight's package-absence check belongs to the original first-install procedure and is expected to fail while the reported installation is present. There was no prior HTP-1 package version at first installation.
 - The HA100 has been reported to support Protocols 1–5. The future preflight must verify Protocol 3 specifically on the actual runtime; Protocol 3 is the required package compatibility gate.
-- The P3 APK is built and locally signature-verified, but package admission and physical HTP-1 behavior remain unverified.
+- The user-reported installed APK hash has not been matched to the local APK file. The installed artifact's source commit is reported by the owner and has not been independently verified from its package bytes.
 - No production log retrieval mechanism was found in the inspected instructions; avoid guessed `logread`, `journalctl`, service, or file-path commands.
 - Packaging previously completed with warnings recorded in `DEVELOPMENT_STATUS.md`. A successful build/package does not establish physical HTP-1 functionality or validate the device response to commands.
-- Before deployment, the preflight must confirm the package is absent; if it is present, stop. The existing verified APK version is used as-is. Deployment itself requires a separate explicit go-ahead.
+- The script's package-absence gate applies to the original first-install path; because the owner reports the package installed, that path should stop at the gate. Do not use it as an update/reinstall procedure without reviewing the supported package update path. Any deployment action still requires a separate explicit go-ahead.
 
 ## Sources inspected
 
-- Project `tools/build-deploy.sh`: target default, Protocol 3 support probe, public-key staging, APK transfer with local/remote SHA-256 gate, signed sideload, and installed-version check.
+- Project `tools/build-deploy.sh`: target default, Protocol 3 support probe, signer-named public-key staging, key-only batch SCP transfer with local/remote SHA-256 gate, signed sideload, and installed-version check.
 - CouchOS `docs/development/packaging.md:144-215`: supported SSH/sideload procedure, Alpine-vs-initramfs path distinction, and warning against direct `apk add`.
 - CouchOS `docs/integration-packages.md:253-274`: CLI command set, immutable slots, protocol handshake, saved-setting check, and rollback semantics.
 - CouchOS `docs/integration-management.md:17-25, 90-101`: install/update/previous-version UI and version immutability.
