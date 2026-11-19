@@ -1,0 +1,37 @@
+[package]
+name = "couch-integration-htp1"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "Monoprice HTP-1 integration for CouchOS"
+repository = "https://github.com/joemacjr92/couch-integration-htp1"
+
+[lib]
+name = "couch_integration_htp1"
+path = "src/lib.rs"
+
+[[bin]]
+name = "couch-plugin-htp1"
+path = "src/main.rs"
+
+[dependencies]
+# Keep both Couch crates pinned to the same reviewed Couch source revision.
+couch-plugin = { git = "https://github.com/Couch-OS/couch.git", rev = "00ab4da2e6336a925e93702507c0b7b233012738" }
+couch-sdk = { git = "https://github.com/Couch-OS/couch.git", rev = "00ab4da2e6336a925e93702507c0b7b233012738" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "net"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "net", "test-util"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,34 @@
+{
+  "protocol_version": 2,
+  "id": "monoprice-htp1",
+  "label": "Monoprice HTP-1",
+  "version": "0.1.0",
+  "executable": "bin/couch-plugin-monoprice-htp1",
+  "capabilities": [],
+  "settings": [
+    {
+      "id": "host",
+      "label": "Device address",
+      "kind": "text",
+      "required": true
+    },
+    {
+      "id": "port",
+      "label": "WebSocket port",
+      "kind": "integer",
+      "required": true,
+      "default": 80
+    },
+    {
+      "id": "use_tls",
+      "label": "Use TLS",
+      "kind": "boolean",
+      "required": false,
+      "default": false
+    }
+  ],
+  "supports_inputs": false,
+  "presentation": [],
+  "min_core_protocol_version": 2,
+  "actions": []
+}
