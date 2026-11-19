@@ -3,10 +3,10 @@
 ## Repository snapshot
 
 - Branch: `feature/htp1-state-sync`
-- HEAD: `045b5b51808957d6f0fbdbf55027910e278ec274` — “Document Protocol 3 and HTP-1 x-command research”
+- HEAD: `5c4b07e13fab40d53bcb1f0060a7ffb3054ddf17` — “Update HTP-1 development status”
 - Main remains at its original scaffold commit: `00b60da88f89800f861062f68bd5cd007973877e` (`Initial HTP-1 integration scaffold`).
 - The HA100 runtime supports Protocols 1 through 5; Protocol 3 compatibility is confirmed.
-- Snapshot updated 2026-11-19 (16:12 UTC).
+- Snapshot updated 2026-11-19 (16:34 UTC).
 
 ## Implemented
 
@@ -90,3 +90,33 @@ not safe write semantics. The newer Couch source has a docs-versus-model-test
 inconsistency about x commands in activity sequences/scenes; verify the desired
 UI behavior for the target release. No implementation or hardware test was
 performed.
+
+## Deployment preparation
+
+Prepared the reviewable deployment procedure and separate live-validation
+checklist in
+[`docs/DEPLOYMENT_AND_LIVE_VALIDATION.md`](docs/DEPLOYMENT_AND_LIVE_VALIDATION.md).
+The local APK exists and its SHA-256 matches the recorded
+`29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460`. The
+supported deployment path is non-interactive SSH plus CouchOS
+`couch-confd integrations install-sideload`, which verifies signature, package
+contents, and protocol handshake; package-manager rollback is documented. The
+owner reports that
+dedicated Ed25519 key authentication was verified using a non-interactive
+remote command (`SSH key authentication succeeded`, `root`, `couch`). The HA100
+has a PTY allocation issue, so deployment instructions require `ssh -F
+/dev/null -T`, an explicit command, that identity, strict host-key checking,
+and non-interactive SSH streaming for file transfer; they avoid SCP and PTYs.
+The owner reports public-key enrollment and successful key-only access; no HTP-1
+package installation or HTP-1 control was performed. Per the owner, this is a
+first installation and no HTP-1 integration package is installed; the SSH
+preflight must verify its absence before transfer. The existing verified APK
+version is used without a version bump. First-install
+recovery is package removal (which preserves saved connections); no prior
+package version exists for rollback. Production log retrieval remains
+unverified. Live HTP-1 WebSocket and control behavior still requires hardware
+validation.
+
+The dedicated client key is at `~/.ssh/id_ed25519_ha100`. Its public half was
+enrolled through CouchOS Remote settings → SSH, as confirmed by the reported
+successful key-only login. The private key remains local.

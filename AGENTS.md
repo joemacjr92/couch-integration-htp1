@@ -76,6 +76,19 @@ sign. It can offer an optional HA100 sideload after packaging. Inspect the
 script and its prompts before using it; deployment is a separate action and
 requires explicit authorization.
 
+For all HA100 deployment and validation commands, use non-interactive SSH only:
+`ssh -F /dev/null -T`, an explicit remote command, the dedicated
+`~/.ssh/id_ed25519_ha100` identity, explicit `~/.ssh/known_hosts`, and
+`StrictHostKeyChecking=yes`. Use batch public-key-only authentication
+(`PasswordAuthentication=no`, `PreferredAuthentications=publickey`). The HA100
+has a PTY allocation issue; never use `ssh -t`, `ssh -tt`, an interactive shell,
+or PTY-dependent commands. Transfer files non-interactively over SSH; do not
+rely on SCP. Do not change system SSH configuration to work around the PTY
+issue. The owner reported a successful key-only remote-command test returning
+`SSH key authentication succeeded`, `root`, and `couch`. This does not authorize
+deployment; installation or any other HA100 change still requires explicit
+approval.
+
 Successful tests, compilation, or APK creation alone do not establish
 functional hardware support. Report hardware testing separately and only when
 it has actually been performed.

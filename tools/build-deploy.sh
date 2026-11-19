@@ -141,18 +141,36 @@ printf 'The APK is a packaging test only; it is not a functional HTP-1 integrati
 read -r -p "Deploy this package to the HA100 now? [y/N]: " DEPLOY
 if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   need ssh
-  need scp
   read -r -p "HA100 IP/hostname [$DEVICE_DEFAULT]: " DEVICE
   DEVICE="${DEVICE:-$DEVICE_DEFAULT}"
+  SSH_ARGS=(
+    -F /dev/null -T
+    -i "$HOME/.ssh/id_ed25519_ha100"
+    -o "UserKnownHostsFile=$HOME/.ssh/known_hosts"
+    -o StrictHostKeyChecking=yes
+    -o IdentitiesOnly=yes
+    -o BatchMode=yes
+    -o PasswordAuthentication=no
+    -o PreferredAuthentications=publickey
+  )
+  [[ -r "$HOME/.ssh/id_ed25519_ha100" ]] || die "Dedicated HA100 SSH identity is not readable."
+  [[ -r "$HOME/.ssh/known_hosts" ]] || die "Explicit known_hosts file is not readable."
+  ha100_ssh() { ssh "${SSH_ARGS[@]}" "root@$DEVICE" "$@"; }
   PROTOCOL_VERSION="$(sed -nE 's/^[[:space:]]*"protocol_version"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$PLUGIN_ROOT/plugin.json" | head -n1)"
   [[ -n "$PROTOCOL_VERSION" ]] || die "Could not read protocol_version from plugin.json."
   log "Checking protocol $PROTOCOL_VERSION support on root@$DEVICE"
-  ssh "root@$DEVICE" "/opt/couch/runtime/current/couch-confd --supports-integration-protocol=$PROTOCOL_VERSION" || die "Protocol support check failed. Package remains built locally."
-  ssh "root@$DEVICE" 'mkdir -p /opt/couch/integration-keys/custom/developer'
-  scp "$PUBLIC_KEY" "root@$DEVICE:/opt/couch/integration-keys/custom/developer/developer.rsa.pub"
-  scp "$APK_PATH" "root@$DEVICE:/tmp/$APK_NAME"
-  ssh "root@$DEVICE" "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
-  INSTALLED_LIST="$(ssh "root@$DEVICE" '/opt/couch/runtime/current/couch-confd integrations list')"
+  ha100_ssh "/opt/couch/runtime/current/couch-confd --supports-integration-protocol=$PROTOCOL_VERSION" || die "Protocol support check failed. Package remains built locally."
+  INSTALLED_LIST="$(ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list')" || die "Could not inspect installed integrations. Package remains built locally."
+  printf '%s\n' "$INSTALLED_LIST"
+  if grep -Eq "(^|[[:space:]])$ID([[:space:]]|$)" <<< "$INSTALLED_LIST"; then
+    die "$ID is already installed; first-install preflight failed. No files were transferred."
+  fi
+  log "Confirmed $ID is absent before first-install staging."
+  ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
+  ha100_ssh 'cat > /opt/couch/integration-keys/custom/developer/developer.rsa.pub' < "$PUBLIC_KEY"
+  ha100_ssh "cat > /tmp/$APK_NAME" < "$APK_PATH"
+  ha100_ssh "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
+  INSTALLED_LIST="$(ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list')"
   printf '%s\n' "$INSTALLED_LIST"
   grep -Fxq "$ID $VERSION" <<< "$INSTALLED_LIST" || die "Installed integration version was not confirmed."
   log "Deployment verified: $ID $VERSION is installed on $DEVICE."
