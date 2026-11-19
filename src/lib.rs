@@ -1,6 +1,7 @@
 pub mod client;
 pub mod error;
 pub mod protocol;
+pub mod sdk;
 pub mod settings;
 pub mod state;
 pub mod transport;
