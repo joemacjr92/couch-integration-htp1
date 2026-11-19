@@ -3,7 +3,7 @@
 ## Repository snapshot
 
 - Branch: `feature/htp1-state-sync`
-- Latest reviewed baseline: P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69` — “Add Protocol 3 custom upmix commands”.
+- HEAD: `e39c149701f261c9e9f716fc0c4bc6b96c0e945e` — “Add Protocol 3 deployment checksum safeguards”; includes P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69`.
 - Main remains at its original scaffold commit: `00b60da88f89800f861062f68bd5cd007973877e` (`Initial HTP-1 integration scaffold`).
 - Protocol 3 runtime support is confirmed by the reviewed SDK/source, and the
   HA100 runtime is reported to support Protocols 1 through 5. P3 package
@@ -48,53 +48,52 @@ physical HTP-1 hardware.
 ## Build and packaging
 
 The packaging mismatch was corrected earlier by changing only `plugin.json`'s
-`executable` field to `bin/couch-plugin-monoprice-htp1`. The last recorded APK
-was built before this Protocol 3 migration, when the manifest declared
-Protocol 2. It is stale and must not be used to validate or deploy this P3
-implementation. No P3 APK has been built; its SHA-256 is pending. The build
-script checksum gate and deployment documentation safeguards must be reviewed
-before creating a fresh P3 APK.
-
-The previous APK record was:
+`executable` field to `bin/couch-plugin-monoprice-htp1`. A fresh signed P3 APK
+was built from this branch with `tools/build-deploy.sh`:
 
 ```text
 /home/joe/couch-dev/couch-integration-htp1/build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk
-SHA-256: 29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460
-Size: 575K
+SHA-256: 07ccc743192ce34fecabc640a239a69d09e0a0bd7ce8a178ec338c0927ab84d2
+Size: 654,484 bytes
+Package: couch-integration-monoprice-htp1 0.1.0-r0 (armv7)
+Manifest: id monoprice-htp1, Protocol 3, executable bin/couch-plugin-monoprice-htp1
+Signature: verified locally with apk-tools and the matching public key
 ```
 
-The Cargo target remains named `couch-plugin-htp1`. The build script compiles
-that binary and the packager stages it under the ID-derived filename inside the
-APK. No Protocol 3 package has been deployed.
+The previous Protocol 2 APK was preserved at:
 
-The workflow completed with warnings: Alpine `abuild` reported that the
-payload is not in `$source/$install/$triggers`, that no maintainer is set, and
-that the local APKINDEX was unavailable from its cache before proceeding. The
-earlier build script output also included an obsolete post-package warning about
-a placeholder executable and empty manifest. The deployment-preparation change
-replaces that warning with an accurate statement that packaging does not
-establish physical HTP-1 functionality or validate device command responses.
-These warnings did not prevent the prior APK creation or signing. Packaging
-success does not establish device functionality.
+```text
+/home/joe/couch-dev/couch-integration-htp1/build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk.pre-p3-29002fc8
+SHA-256: 29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460
+Size: 588,792 bytes
+```
+
+The Cargo target remains named `couch-plugin-htp1`; the APK contains the
+ID-derived executable at `usr/lib/couch/integrations/monoprice-htp1/bin/couch-plugin-monoprice-htp1`.
+The extracted executable is a statically linked ARM EABI5 32-bit ELF. No
+Protocol 3 package has been deployed or admitted on the HA100.
+
+Alpine `abuild` warned that the payload is not in `$source/$install/$triggers`,
+that no maintainer is set, and that APKINDEX files were unavailable from cache
+before proceeding. These warnings did not prevent package creation or signing.
+The build script warned that successful packaging does not establish physical
+HTP-1 functionality or validate device command responses. The deployment prompt
+was declined. Packaging and local signature verification do not establish
+device functionality.
 
 ## Outstanding work and next steps
 
-1. Complete and review the deployment-script checksum safeguard and deployment
-   documentation updates before building a fresh signed P3 APK.
-2. Build the P3 APK, record its SHA-256, and review package warnings and
-   manifest/protocol contents.
-3. After separate deployment approval, validate P3 package admission on the
-   HA100 without assuming packaging proves runtime behavior.
-4. After separate physical-validation approval, verify each upmix patch/value
-   and observed result on the HTP-1.
-5. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
+1. After separate deployment approval, perform the key-only SSH preflight and
+   validate P3 package admission on the HA100 using the recorded APK hash.
+2. After separate physical-validation approval, verify HTP-1 connection,
+   snapshot state, and requested device responses.
+3. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
    remain in scope; do not infer `off`/`mono` behavior.
 
 ## Uncertainties
 
-- No Protocol 3 APK has been packaged or admitted on the HA100, and the HTP-1
-  upmix patch semantics have not been verified on physical hardware. The
-  pre-migration Protocol 2 packaging result does not validate this P3 build.
+- The P3 APK is built and locally signature-verified, but package admission on
+  the HA100 and HTP-1 upmix patch behavior remain unverified on hardware.
 - The repository README still describes the original scaffold as incomplete;
   this status file records the later implementation context supplied for this
   branch. Update that older overview only after reviewing its intended role.
@@ -120,9 +119,9 @@ deployed or tested against an HTP-1.
 Prepared the reviewable deployment procedure and separate live-validation
 checklist in
 [`docs/DEPLOYMENT_AND_LIVE_VALIDATION.md`](docs/DEPLOYMENT_AND_LIVE_VALIDATION.md).
-The pre-migration APK exists and its SHA-256 matches the recorded
-`29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460`. The
-supported deployment path is non-interactive SSH plus CouchOS
+The fresh P3 APK and its SHA-256 are recorded above; the prior Protocol 2 APK
+is retained under a `.pre-p3-29002fc8` suffix. The supported deployment path is
+non-interactive SSH plus CouchOS
 `couch-confd integrations install-sideload`, which verifies signature, package
 contents, and protocol handshake; package-manager rollback is documented. The
 owner reports that

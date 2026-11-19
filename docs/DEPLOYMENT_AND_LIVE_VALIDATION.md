@@ -1,14 +1,17 @@
 # HTP-1 deployment preparation and live validation
 
 **Preparation snapshot:** 2026-11-19
-**Repository:** `feature/htp1-state-sync` at P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69` (`Add Protocol 3 custom upmix commands`)
+**Repository:** `feature/htp1-state-sync` at deployment safeguards commit `e39c149701f261c9e9f716fc0c4bc6b96c0e945e` (`Add Protocol 3 deployment checksum safeguards`)
 **HA100 address:** `10.0.0.25`
-**P3 APK:** Not built yet; its SHA-256 is pending.
+**P3 APK:** `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk`
+
+**SHA-256:** `07ccc743192ce34fecabc640a239a69d09e0a0bd7ce8a178ec338c0927ab84d2` (654,484 bytes)
 
 ## Current local verification
 
-- Branch and HEAD were inspected. The worktree was clean before preparing this document.
-- No Protocol 3 APK has been built. Build it only after the script and documentation safeguards in this preparation are reviewed; calculate and record its SHA-256 then.
+- Branch and HEAD were inspected; the worktree was clean before building. The fresh package is from the current committed P3 source.
+- The APK was built and signed by `tools/build-deploy.sh`. Its manifest declares Protocol 3, ID `monoprice-htp1`, version `0.1.0`, and executable `bin/couch-plugin-monoprice-htp1`; package metadata says `armv7`, and the extracted executable is a statically linked ARM EABI5 32-bit ELF. Local `apk verify` with the matching public key returned `OK`.
+- The prior Protocol 2 artifact was preserved as `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk.pre-p3-29002fc8`; it is not the deployment candidate.
 - The owner subsequently reported a successful non-interactive key-only SSH command returning `SSH key authentication succeeded`, `root`, and `couch`. No deployment preflight inventory was run for this document. Per the current project owner, this is a first install; the preflight below must verify that no `monoprice-htp1` row exists before transfer. The exact runtime build, saved connection, and target signing trust-key state remain to be confirmed.
 - The integration manifest requests Protocol 3. The target has been reported to support Protocols 1 through 5; Protocol 3 is the required package compatibility gate. Recheck Protocol 3 support on the target runtime immediately before installation.
 
@@ -111,7 +114,7 @@ sha256sum "$APK"
 test -r "$PUBLIC_KEY"
 ```
 
-The P3 APK does not exist yet, so its SHA-256 is pending. After the safeguards are reviewed and the APK is freshly built and signed, calculate its local hash and retain that exact value for comparison. Proceed only if the public key is readable and the local APK hash is valid. After all read-only preflight gates pass, the documented development procedure creates the custom key directory and transfers the public key and package:
+The fresh P3 APK hash is recorded at the top of this document. Recalculate the local hash immediately before transfer and compare it with the remote hash after streaming. Proceed only if the public key is readable and both hashes match. After all read-only preflight gates pass, the documented development procedure creates the custom key directory and transfers the public key and package:
 
 ```bash
 ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
@@ -210,7 +213,7 @@ Physical HTP-1 validation is a future action requiring separate explicit approva
 
 - The owner reports successful key-only SSH access, but Codex has not run the deployment preflight. The exact installed CouchOS build, package absence, signing trust-key state, and saved connection settings remain to be confirmed. Per the owner, this is a first install and there is no prior HTP-1 package version to roll back to.
 - The HA100 has been reported to support Protocols 1–5. The future preflight must verify Protocol 3 specifically on the actual runtime; Protocol 3 is the required package compatibility gate.
-- No P3 APK has been built, so its SHA-256 is pending. Package admission and physical HTP-1 behavior remain unverified.
+- The P3 APK is built and locally signature-verified, but package admission and physical HTP-1 behavior remain unverified.
 - No production log retrieval mechanism was found in the inspected instructions; avoid guessed `logread`, `journalctl`, service, or file-path commands.
 - Packaging previously completed with warnings recorded in `DEVELOPMENT_STATUS.md`. A successful build/package does not establish physical HTP-1 functionality or validate the device response to commands.
 - Before deployment, the preflight must confirm the package is absent; if it is present, stop. The existing verified APK version is used as-is. Deployment itself requires a separate explicit go-ahead.
