@@ -2,9 +2,12 @@
 
 use std::time::Duration;
 
+use serde_json::Value;
 use tokio::time::timeout;
 
-use crate::protocol::{apply_state_patch, get_mso_command, parse_server_message, ServerMessage};
+use crate::protocol::{
+    apply_state_patch, change_mso_command, get_mso_command, parse_server_message, ServerMessage,
+};
 use crate::transport::Transport;
 use crate::{Error, Htp1State, Result, Settings};
 
@@ -27,8 +30,6 @@ impl Client {
                 let message = transport.receive_text().await?;
                 match parse_server_message(&message)? {
                     ServerMessage::FullState(state) => return Ok::<Htp1State, Error>(state),
-                    // Incremental updates cannot be applied until the initial
-                    // snapshot has established the document they modify.
                     ServerMessage::StatePatch(_) | ServerMessage::Other(_) => {}
                 }
             }
@@ -47,15 +48,42 @@ impl Client {
         &self.state
     }
 
-    /// True after the initial full-state response has been received.
     pub fn is_ready(&self) -> bool {
         self.ready
     }
 
+    /// Send one already-validated MSO patch transaction.
+    pub async fn send_patch(&mut self, patch: &Value) -> Result<()> {
+        let command = change_mso_command(patch)?;
+        self.transport.send_text(command).await
+    }
+
+    /// Request and cache a fresh full state snapshot. Incremental updates
+    /// received while waiting are applied to the existing snapshot.
+    pub async fn refresh_state(&mut self) -> Result<()> {
+        self.transport.send_text(get_mso_command()).await?;
+        timeout(INITIAL_STATE_TIMEOUT, async {
+            loop {
+                let message = self.transport.receive_text().await?;
+                match parse_server_message(&message)? {
+                    ServerMessage::FullState(state) => {
+                        self.state = state;
+                        self.ready = true;
+                        return Ok::<(), Error>(());
+                    }
+                    ServerMessage::StatePatch(patch) if self.ready => {
+                        apply_state_patch(&mut self.state.raw, &patch)?;
+                        self.state = Htp1State::from_mso(self.state.raw.clone());
+                    }
+                    ServerMessage::StatePatch(_) | ServerMessage::Other(_) => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| Error::Timeout)?
+    }
+
     /// Receive and process one server message.
-    ///
-    /// Returns true when the cached state changed. Unknown messages and
-    /// patches received before an initial snapshot do not change state.
     pub async fn process_next_message(&mut self) -> Result<bool> {
         let message = self.transport.receive_text().await?;
         match parse_server_message(&message)? {
