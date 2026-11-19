@@ -3,7 +3,7 @@
   "id": "monoprice-htp1",
   "label": "Monoprice HTP-1",
   "version": "0.1.0",
-  "executable": "bin/couch-plugin-htp1",
+  "executable": "bin/couch-plugin-monoprice-htp1",
   "capabilities": [
     { "id": "power-on", "label": "Power on" },
     { "id": "power-off", "label": "Power off" },
