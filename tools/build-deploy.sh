@@ -91,9 +91,7 @@ log "Compiling plugin for $TARGET"
   # shellcheck disable=SC1091
   . tools/arm-cc-env.sh
   cd clients
-  CARGO_ARGS=(build --release --target "$TARGET" --manifest-path "$PLUGIN_ROOT/Cargo.toml")
-  [[ ! -f "$PLUGIN_ROOT/Cargo.lock" ]] || CARGO_ARGS+=(--locked)
-  cargo "${CARGO_ARGS[@]}"
+  cargo build --release --locked --target "$TARGET" --manifest-path "$PLUGIN_ROOT/Cargo.toml"
 )
 BINARY="$PLUGIN_ROOT/target/$TARGET/release/couch-plugin-htp1"
 [[ -f "$BINARY" ]] || die "Cargo did not produce $BINARY"
@@ -136,23 +134,66 @@ ls -lh "$APK_PATH"
 
 log "Build complete: $APK_PATH"
 
-printf '\nWARNING: This scaffold currently contains a placeholder executable and an empty manifest.\n'
-printf 'The APK is a packaging test only; it is not a functional HTP-1 integration yet.\n'
+printf '\nWARNING: A successful build and package operation does not establish physical HTP-1 functionality or validate the device response to integration commands.\n'
 read -r -p "Deploy this package to the HA100 now? [y/N]: " DEPLOY
 if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   need ssh
   need scp
   read -r -p "HA100 IP/hostname [$DEVICE_DEFAULT]: " DEVICE
   DEVICE="${DEVICE:-$DEVICE_DEFAULT}"
+  SSH_ARGS=(
+    -F /dev/null -T
+    -i "$HOME/.ssh/id_ed25519_ha100"
+    -o "UserKnownHostsFile=$HOME/.ssh/known_hosts"
+    -o StrictHostKeyChecking=yes
+    -o IdentitiesOnly=yes
+    -o BatchMode=yes
+    -o PreferredAuthentications=publickey
+    -o PasswordAuthentication=no
+  )
+  SCP_ARGS=(
+    -B
+    -F /dev/null
+    -i "$HOME/.ssh/id_ed25519_ha100"
+    -o "UserKnownHostsFile=$HOME/.ssh/known_hosts"
+    -o StrictHostKeyChecking=yes
+    -o IdentitiesOnly=yes
+    -o BatchMode=yes
+    -o PreferredAuthentications=publickey
+    -o PasswordAuthentication=no
+  )
+  [[ -r "$HOME/.ssh/id_ed25519_ha100" ]] || die "Dedicated HA100 SSH identity is not readable."
+  [[ -r "$HOME/.ssh/known_hosts" ]] || die "Explicit known_hosts file is not readable."
+  ha100_ssh() { ssh -T "${SSH_ARGS[@]}" "root@$DEVICE" "$@"; }
   PROTOCOL_VERSION="$(sed -nE 's/^[[:space:]]*"protocol_version"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$PLUGIN_ROOT/plugin.json" | head -n1)"
   [[ -n "$PROTOCOL_VERSION" ]] || die "Could not read protocol_version from plugin.json."
   log "Checking protocol $PROTOCOL_VERSION support on root@$DEVICE"
-  ssh "root@$DEVICE" "/opt/couch/runtime/current/couch-confd --supports-integration-protocol=$PROTOCOL_VERSION" || die "Protocol support check failed. Package remains built locally."
-  ssh "root@$DEVICE" 'mkdir -p /opt/couch/integration-keys/custom/developer'
-  scp "$PUBLIC_KEY" "root@$DEVICE:/opt/couch/integration-keys/custom/developer/developer.rsa.pub"
-  scp "$APK_PATH" "root@$DEVICE:/tmp/$APK_NAME"
-  ssh "root@$DEVICE" "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
-  INSTALLED_LIST="$(ssh "root@$DEVICE" '/opt/couch/runtime/current/couch-confd integrations list')"
+  ha100_ssh "/opt/couch/runtime/current/couch-confd --supports-integration-protocol=$PROTOCOL_VERSION" || die "Protocol support check failed. Package remains built locally."
+  INSTALLED_LIST="$(ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list')" || die "Could not inspect installed integrations. Package remains built locally."
+  printf '%s\n' "$INSTALLED_LIST"
+  if grep -Eq "(^|[[:space:]])$ID([[:space:]]|$)" <<< "$INSTALLED_LIST"; then
+    die "$ID is already installed; first-install preflight failed. No files were transferred."
+  fi
+  log "Confirmed $ID is absent before first-install staging."
+  ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
+  scp "${SCP_ARGS[@]}" "$PUBLIC_KEY" "root@$DEVICE:/opt/couch/integration-keys/custom/developer/-6afc809d.rsa.pub"
+  scp "${SCP_ARGS[@]}" "$APK_PATH" "root@$DEVICE:/tmp/$APK_NAME"
+  LOCAL_APK_CHECKSUM="$(sha256sum "$APK_PATH")" || die "Could not calculate local APK SHA-256."
+  LOCAL_APK_SHA256="${LOCAL_APK_CHECKSUM%%[[:space:]]*}"
+  [[ "$LOCAL_APK_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || die "Local APK checksum did not produce a valid SHA-256 hash."
+  REMOTE_APK_CHECKSUM="$(ha100_ssh "sha256sum /tmp/$APK_NAME")" || die "Could not calculate remote APK SHA-256; refusing installation."
+  if [[ "$REMOTE_APK_CHECKSUM" =~ ^([[:xdigit:]]{64})[[:space:]]+(/tmp/[^[:space:]]+)$ ]]; then
+    REMOTE_APK_SHA256="${BASH_REMATCH[1]}"
+    REMOTE_APK_PATH="${BASH_REMATCH[2]}"
+  else
+    die "Remote APK checksum output was empty or invalid; refusing installation."
+  fi
+  [[ "$REMOTE_APK_PATH" == "/tmp/$APK_NAME" ]] || die "Remote checksum was for an unexpected file; refusing installation."
+  [[ "$REMOTE_APK_SHA256" == "$LOCAL_APK_SHA256" ]] || die "Local and remote APK SHA-256 hashes differ; refusing installation."
+  printf 'Local APK SHA-256:  %s\n' "$LOCAL_APK_SHA256"
+  printf 'Remote APK SHA-256: %s\n' "$REMOTE_APK_SHA256"
+  ha100_ssh "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
+  INSTALLED_LIST="$(ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list')"
   printf '%s\n' "$INSTALLED_LIST"
   grep -Fxq "$ID $VERSION" <<< "$INSTALLED_LIST" || die "Installed integration version was not confirmed."
   log "Deployment verified: $ID $VERSION is installed on $DEVICE."

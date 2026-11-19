@@ -1,10 +1,23 @@
 {
-  "protocol_version": 2,
+  "protocol_version": 3,
   "id": "monoprice-htp1",
   "label": "Monoprice HTP-1",
   "version": "0.1.0",
   "executable": "bin/couch-plugin-monoprice-htp1",
-  "capabilities": [],
+  "capabilities": [
+    { "id": "power-on", "label": "Power on" },
+    { "id": "power-off", "label": "Power off" },
+    { "id": "volume-up", "label": "Volume up (1 dB)" },
+    { "id": "volume-down", "label": "Volume down (1 dB)" },
+    { "id": "mute", "label": "Toggle mute" },
+    { "id": "mute-on", "label": "Mute" },
+    { "id": "mute-off", "label": "Unmute" },
+    { "id": "x:upmix-auro", "label": "Upmix: Auro" },
+    { "id": "x:upmix-dolby", "label": "Upmix: Dolby" },
+    { "id": "x:upmix-dts", "label": "Upmix: DTS" },
+    { "id": "x:upmix-native", "label": "Upmix: Native" },
+    { "id": "x:upmix-stereo", "label": "Upmix: Stereo" }
+  ],
   "settings": [
     {
       "id": "host",
@@ -27,8 +40,37 @@
       "default": false
     }
   ],
-  "supports_inputs": false,
-  "presentation": [],
-  "min_core_protocol_version": 2,
+  "supports_inputs": true,
+  "presentation": [
+    {
+      "kind": "toggle",
+      "label": "Power",
+      "state": "on",
+      "on": "power-on",
+      "off": "power-off"
+    },
+    {
+      "kind": "command_group",
+      "title": "Volume",
+      "commands": ["volume-up", "volume-down"]
+    },
+    {
+      "kind": "status_text",
+      "label": "Volume",
+      "field": "volume_db"
+    },
+    {
+      "kind": "toggle",
+      "label": "Mute",
+      "state": "muted",
+      "on": "mute-on",
+      "off": "mute-off"
+    },
+    {
+      "kind": "input_selector",
+      "label": "Input"
+    }
+  ],
+  "min_core_protocol_version": 3,
   "actions": []
 }

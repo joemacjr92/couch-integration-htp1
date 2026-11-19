@@ -1,15 +1,12 @@
-use couch_integration_htp1::protocol::{
-    parse_server_message,
-    ServerMessage,
-};
+use couch_integration_htp1::protocol::{parse_server_message, ServerMessage};
 use serde_json::json;
 
 const HTP1_RESPONSE: &str = include_str!("fixtures/responses.txt");
 
 #[test]
 fn parses_complete_htp1_response_fixture() {
-    let message = parse_server_message(HTP1_RESPONSE.trim())
-        .expect("HTP-1 response fixture should parse");
+    let message =
+        parse_server_message(HTP1_RESPONSE.trim()).expect("HTP-1 response fixture should parse");
 
     let state = match message {
         ServerMessage::FullState(state) => state,
