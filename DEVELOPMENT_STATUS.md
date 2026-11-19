@@ -3,9 +3,10 @@
 ## Repository snapshot
 
 - Branch: `feature/htp1-state-sync`
-- HEAD: `35523a47b27e494697db44407b24479cd79ca734` — “Update lockfile and format SDK adapter”
-- Main remains untouched at its scaffold commit, per the project context.
-- This status reflects the inspected workspace and project context on 2026-11-19.
+- HEAD: `045b5b51808957d6f0fbdbf55027910e278ec274` — “Document Protocol 3 and HTP-1 x-command research”
+- Main remains at its original scaffold commit: `00b60da88f89800f861062f68bd5cd007973877e` (`Initial HTP-1 integration scaffold`).
+- The HA100 runtime supports Protocols 1 through 5; Protocol 3 compatibility is confirmed.
+- Snapshot updated 2026-11-19 (16:12 UTC).
 
 ## Implemented
 
@@ -80,10 +81,12 @@ newer Couch source tree. The report is in
 The integration is pinned to Couch revision
 `00ab4da2e6336a925e93702507c0b7b233012738` (Protocol 2); the inspected later
 source at `e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81` contains Protocol 3 `x:`
-commands. A P3 migration requires an approved SDK pin and target-runtime
-compatibility check. x commands are fixed declared IDs without arbitrary
-payloads, so they could map to verified discrete HTP-1 choices. Snapshot
-fixtures establish observation only, not safe write semantics. The newer Couch
-source has a docs-versus-model-test inconsistency about x commands in activity
-sequences/scenes; custom-page support should be confirmed against the target
-release. No implementation or hardware test was performed.
+commands. The HA100 runtime supports Protocols 1 through 5, confirming Protocol
+3 compatibility. The integration remains pinned to a Protocol 2 SDK; a future
+Protocol 3 migration still requires reviewing and updating that SDK pin. x
+commands are fixed declared IDs without arbitrary payloads, so they could map to
+verified discrete HTP-1 choices. Snapshot fixtures establish observation only,
+not safe write semantics. The newer Couch source has a docs-versus-model-test
+inconsistency about x commands in activity sequences/scenes; verify the desired
+UI behavior for the target release. No implementation or hardware test was
+performed.
