@@ -248,4 +248,23 @@ mod tests {
             Some(VolumeDb::Minimum)
         );
     }
+    #[test]
+    fn embedded_manifest_matches_the_sdk_contract() {
+        let manifest: couch_plugin::Manifest =
+            serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        manifest.validate().unwrap();
+        assert_eq!(manifest.id, <SdkClient as DeviceClient>::KIND);
+        let manifest_capabilities: Vec<_> = manifest
+            .capabilities
+            .iter()
+            .map(|capability| (capability.id.as_str(), capability.label.as_str()))
+            .collect();
+        let sdk_capabilities: Vec<_> = <SdkClient as DeviceClient>::capabilities()
+            .iter()
+            .map(|(id, label)| (*id, *label))
+            .collect();
+        assert_eq!(manifest_capabilities, sdk_capabilities);
+        assert!(manifest.supports_inputs);
+    }
+
 }
