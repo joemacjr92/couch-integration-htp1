@@ -136,8 +136,7 @@ ls -lh "$APK_PATH"
 
 log "Build complete: $APK_PATH"
 
-printf '\nWARNING: This scaffold currently contains a placeholder executable and an empty manifest.\n'
-printf 'The APK is a packaging test only; it is not a functional HTP-1 integration yet.\n'
+printf '\nWARNING: A successful build and package operation does not establish physical HTP-1 functionality or validate the device response to integration commands.\n'
 read -r -p "Deploy this package to the HA100 now? [y/N]: " DEPLOY
 if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   need ssh
@@ -169,6 +168,20 @@ if [[ "$DEPLOY" =~ ^[Yy]$ ]]; then
   ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
   ha100_ssh 'cat > /opt/couch/integration-keys/custom/developer/developer.rsa.pub' < "$PUBLIC_KEY"
   ha100_ssh "cat > /tmp/$APK_NAME" < "$APK_PATH"
+  LOCAL_APK_CHECKSUM="$(sha256sum "$APK_PATH")" || die "Could not calculate local APK SHA-256."
+  LOCAL_APK_SHA256="${LOCAL_APK_CHECKSUM%%[[:space:]]*}"
+  [[ "$LOCAL_APK_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || die "Local APK checksum did not produce a valid SHA-256 hash."
+  REMOTE_APK_CHECKSUM="$(ha100_ssh "sha256sum /tmp/$APK_NAME")" || die "Could not calculate remote APK SHA-256; refusing installation."
+  if [[ "$REMOTE_APK_CHECKSUM" =~ ^([[:xdigit:]]{64})[[:space:]]+(/tmp/[^[:space:]]+)$ ]]; then
+    REMOTE_APK_SHA256="${BASH_REMATCH[1]}"
+    REMOTE_APK_PATH="${BASH_REMATCH[2]}"
+  else
+    die "Remote APK checksum output was empty or invalid; refusing installation."
+  fi
+  [[ "$REMOTE_APK_PATH" == "/tmp/$APK_NAME" ]] || die "Remote checksum was for an unexpected file; refusing installation."
+  [[ "$REMOTE_APK_SHA256" == "$LOCAL_APK_SHA256" ]] || die "Local and remote APK SHA-256 hashes differ; refusing installation."
+  printf 'Local APK SHA-256:  %s\n' "$LOCAL_APK_SHA256"
+  printf 'Remote APK SHA-256: %s\n' "$REMOTE_APK_SHA256"
   ha100_ssh "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
   INSTALLED_LIST="$(ha100_ssh '/opt/couch/runtime/current/couch-confd integrations list')"
   printf '%s\n' "$INSTALLED_LIST"

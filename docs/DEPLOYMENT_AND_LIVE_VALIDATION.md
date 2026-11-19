@@ -1,17 +1,16 @@
 # HTP-1 deployment preparation and live validation
 
 **Preparation snapshot:** 2026-11-19
-**Repository:** `feature/htp1-state-sync` at `5c4b07e13fab40d53bcb1f0060a7ffb3054ddf17` (`Update HTP-1 development status`)
+**Repository:** `feature/htp1-state-sync` at P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69` (`Add Protocol 3 custom upmix commands`)
 **HA100 address:** `10.0.0.25`
-**Prepared APK:** `build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk`
-**Expected SHA-256:** `29002fc8ed21b02986e24bc5811a2ec5225c3a47d5354c8e14ad12ac2d1f2460`
+**P3 APK:** Not built yet; its SHA-256 is pending.
 
 ## Current local verification
 
 - Branch and HEAD were inspected. The worktree was clean before preparing this document.
-- The APK exists (588,792 bytes; timestamp 2026-11-19 10:27 local time) and its SHA-256 matches the expected value above.
+- No Protocol 3 APK has been built. Build it only after the script and documentation safeguards in this preparation are reviewed; calculate and record its SHA-256 then.
 - The owner subsequently reported a successful non-interactive key-only SSH command returning `SSH key authentication succeeded`, `root`, and `couch`. No deployment preflight inventory was run for this document. Per the current project owner, this is a first install; the preflight below must verify that no `monoprice-htp1` row exists before transfer. The exact runtime build, saved connection, and target signing trust-key state remain to be confirmed.
-- The integration manifest requests Protocol 2. `DEVELOPMENT_STATUS.md` records that this HA100 runtime supports Protocols 1 through 5, including Protocol 3. Recheck the target with the runtime's supported protocol probe immediately before installation.
+- The integration manifest requests Protocol 3. The target has been reported to support Protocols 1 through 5; Protocol 3 is the required package compatibility gate. Recheck Protocol 3 support on the target runtime immediately before installation.
 
 All commands below are proposals for a separately approved deployment window. No SSH command, transfer, install, restart, stop, remove, or configuration edit was performed by Codex while preparing this document. The owner separately reports that key-only SSH authentication works.
 
@@ -39,12 +38,14 @@ CouchOS's development packaging guidance documents signed APK sideload over SSH.
 In the normal HA100 Alpine environment, invoke the signed package installation as this explicit remote command:
 
 ```sh
-ha100_ssh '/opt/couch/runtime/current/couch-confd integrations \
+ha100_ssh "/opt/couch/runtime/current/couch-confd integrations \
   --keys-dir /opt/couch/integration-keys/custom/developer \
-  install-sideload /tmp/couch-integration-monoprice-htp1-0.1.0-r0.apk'
+  install-sideload /tmp/$APK_NAME"
 ```
 
-The same procedure is present in this repository's `tools/build-deploy.sh:141-158` (optional path, default HA100 `10.0.0.25`) and CouchOS `docs/development/packaging.md:144-215` / `docs/integration-packages.md:253-274`. Package admission verifies the APK signature, audits its payload, checks its protocol handshake, and only then activates it. **Do not use `apk add`**; CouchOS documentation says that bypasses the package audit, handshake, immutable slots, activation record, saved-settings compatibility check, and rollback mechanism.
+`APK_NAME` is set from the freshly built P3 artifact in the transfer step below.
+
+The same procedure is present in this repository's `tools/build-deploy.sh` (optional path, default HA100 `10.0.0.25`) and CouchOS `docs/development/packaging.md:144-215` / `docs/integration-packages.md:253-274`. Package admission verifies the APK signature, audits its payload, checks its protocol handshake, and only then activates it. **Do not use `apk add`**; CouchOS documentation says that bypasses the package audit, handshake, immutable slots, activation record, saved-settings compatibility check, and rollback mechanism.
 
 The documented SSH example assumes root login into the normal Alpine environment. If the SSH shell is the outer initramfs/recovery shell instead, the CouchOS guide requires the separate `chroot /mnt/alpine` procedure. This plan is for normal SSH only and must stop if `/etc/alpine-release` is absent; do not improvise recovery-shell paths.
 
@@ -60,14 +61,20 @@ ha100_ssh 'test -f /etc/alpine-release'
 
 Then record the Couch config daemon version, verify protocol support (the project records that 1 through 5 are supported), and inspect installed package IDs/versions. These are read-only commands:
 
-```sh
+```bash
 ha100_ssh '
   set -eu
   CONFD=/opt/couch/runtime/current/couch-confd
   "$CONFD" --version
   for protocol in 1 2 3 4 5; do
-    "$CONFD" --supports-integration-protocol="$protocol"
-    printf "Protocol %s: supported\n" "$protocol"
+    if "$CONFD" --supports-integration-protocol="$protocol"; then
+      printf "Protocol %s: supported\n" "$protocol"
+    elif [ "$protocol" = 3 ]; then
+      printf "ERROR: Protocol 3 is required but unsupported.\n" >&2
+      exit 1
+    else
+      printf "Protocol %s: unsupported\n" "$protocol"
+    fi
   done
   installed="$("$CONFD" integrations list)"
   printf "%s\n" "$installed"
@@ -79,16 +86,16 @@ ha100_ssh '
 '
 ```
 
-`couch-confd --version` is implemented by the checked Couch source (`daemon/couch-confd/src/main.rs`, `parse_args`); it identifies that binary's build version. The source and deployment guide document `--supports-integration-protocol=N` as the runtime compatibility probe. Save the version/probe/list output without SSH verbose mode or shell tracing. The probe for Protocol 2 is the required package gate; any unexpected nonzero result stops the procedure.
+`couch-confd --version` is implemented by the checked Couch source (`daemon/couch-confd/src/main.rs`, `parse_args`); it identifies that binary's build version. The source and deployment guide document `--supports-integration-protocol=N` as the runtime compatibility probe. Save the version/probe/list output without SSH verbose mode or shell tracing. Protocol 3 is the required package gate; a failed Protocol 3 probe stops the procedure. Other protocol probes are informational.
 
-The CLI list is the pre-install inventory. The preflight command prints the list and exits before transfer if it finds `monoprice-htp1`. If an entry is present, stop: the live state no longer matches the first-install premise. Do not update, overwrite, or bump the APK version to work around that discrepancy.
+The CLI list is the pre-install inventory. The preflight command prints the list and exits before transfer if it finds `monoprice-htp1`. If an entry is present, stop: the live state no longer matches the first-install premise. Protocol 3 support is the required protocol gate. Do not update, overwrite, or bump the APK version to work around an installation-state discrepancy.
 
 ### 2. First-install and configuration gates
 
 Before transferring anything:
 
 - Confirm `couch-confd integrations list` contains no `monoprice-htp1` row. If it does, stop and review the discrepancy; do not run the install command.
-- No existing HTP-1 integration package needs to be preserved. This is a first install of the already-built `0.1.0-r0` APK; no version bump is needed for upgrade handling.
+- No existing HTP-1 integration package needs to be preserved. This is a first install of the freshly built P3 APK; no version bump is needed for upgrade handling.
 - A saved CouchOS connection/configuration record may still exist even when the package is absent. Review it in the paired UI and do not copy, print, edit, or remove CouchOS configuration or credential files. The CouchOS package manager performs saved-settings checks; its documentation says package removal retains saved connections.
 - Do not proceed if the signature trust key, protocol probe, or intended HTP-1 connection/settings cannot be established.
 
@@ -96,25 +103,50 @@ Before transferring anything:
 
 The build script defaults to the public key at `$HOME/.abuild/-6afc809d.rsa.pub` and copies that public key to the dedicated developer trust directory. Never transfer or display the private signing key.
 
-```sh
+```bash
 APK=build/integrations/couch-integration-monoprice-htp1-0.1.0-r0.apk
+APK_NAME="$(basename "$APK")"
 PUBLIC_KEY="$HOME/.abuild/-6afc809d.rsa.pub"
 sha256sum "$APK"
 test -r "$PUBLIC_KEY"
 ```
 
-Proceed only if the APK hash equals the expected hash at the top of this document and the public key is readable. After all read-only preflight gates pass, the documented development procedure creates the custom key directory and transfers the public key and package:
+The P3 APK does not exist yet, so its SHA-256 is pending. After the safeguards are reviewed and the APK is freshly built and signed, calculate its local hash and retain that exact value for comparison. Proceed only if the public key is readable and the local APK hash is valid. After all read-only preflight gates pass, the documented development procedure creates the custom key directory and transfers the public key and package:
 
-```sh
+```bash
 ha100_ssh 'mkdir -p /opt/couch/integration-keys/custom/developer'
 ha100_ssh 'cat > /opt/couch/integration-keys/custom/developer/developer.rsa.pub' \
   < "$PUBLIC_KEY"
-ha100_ssh 'cat > /tmp/couch-integration-monoprice-htp1-0.1.0-r0.apk' \
+ha100_ssh "cat > /tmp/$APK_NAME" \
   < "$APK"
-ha100_ssh 'sha256sum /tmp/couch-integration-monoprice-htp1-0.1.0-r0.apk'
+REMOTE_CHECKSUM="$(ha100_ssh "sha256sum /tmp/$APK_NAME")" || {
+  printf 'ERROR: remote checksum command failed; do not install.\n' >&2
+  exit 1
+}
+LOCAL_CHECKSUM="$(sha256sum "$APK")" || {
+  printf 'ERROR: local checksum command failed; do not install.\n' >&2
+  exit 1
+}
+LOCAL_SHA256="${LOCAL_CHECKSUM%%[[:space:]]*}"
+if [[ ! "$LOCAL_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+  printf 'ERROR: APK SHA-256 comparison failed; do not install.\n' >&2
+  exit 1
+fi
+if [[ "$REMOTE_CHECKSUM" =~ ^([[:xdigit:]]{64})[[:space:]]+(/tmp/[^[:space:]]+)$ ]]; then
+  REMOTE_SHA256="${BASH_REMATCH[1]}"
+  REMOTE_PATH="${BASH_REMATCH[2]}"
+else
+  printf 'ERROR: remote checksum output is empty or invalid; do not install.\n' >&2
+  exit 1
+fi
+if [[ "$REMOTE_PATH" != "/tmp/$APK_NAME" || "$REMOTE_SHA256" != "$LOCAL_SHA256" ]]; then
+  printf 'ERROR: APK SHA-256 comparison failed; do not install.\n' >&2
+  exit 1
+fi
+printf 'Local APK SHA-256:  %s\nRemote APK SHA-256: %s\n' "$LOCAL_SHA256" "$REMOTE_SHA256"
 ```
 
-Compare the remote checksum with the expected SHA-256 before installation. These commands intentionally do not use `apk`, restart a service, or alter saved device settings.
+The comparison fails closed if the remote command fails, its output does not contain a valid SHA-256 and the expected path, or the hashes differ. Do not run `install-sideload` unless both hashes match. These commands intentionally do not use `apk`, restart a service, or alter saved device settings.
 
 ### 4. Install, verify recognition, and rollback
 
@@ -122,9 +154,7 @@ After an explicit deployment go-ahead and successful preflight/checksum comparis
 
 ```sh
 ha100_ssh \
-  '/opt/couch/runtime/current/couch-confd integrations \
-    --keys-dir /opt/couch/integration-keys/custom/developer \
-    install-sideload /tmp/couch-integration-monoprice-htp1-0.1.0-r0.apk'
+  "/opt/couch/runtime/current/couch-confd integrations --keys-dir /opt/couch/integration-keys/custom/developer install-sideload /tmp/$APK_NAME"
 ```
 
 Capture its stdout/stderr locally. On success, verify package recognition/version:
@@ -154,7 +184,7 @@ The package guide states removal retains saved connection records, while integra
 
 ## Separate live validation checklist
 
-Perform these only after deployment approval, package admission, and selection/review of the intended HTP-1 connection. Record pass/fail, observed values, timestamp, and UI/CLI errors without including credentials.
+Physical HTP-1 validation is a future action requiring separate explicit approval; deployment approval alone does not authorize device controls. Perform this checklist only after separate deployment and physical-validation approval, package admission, and selection/review of the intended HTP-1 connection. Record pass/fail, observed values, timestamp, and UI/CLI errors without including credentials.
 
 ### Connection and state (read-only)
 
@@ -179,15 +209,15 @@ Perform these only after deployment approval, package admission, and selection/r
 ## Unknowns and review gates
 
 - The owner reports successful key-only SSH access, but Codex has not run the deployment preflight. The exact installed CouchOS build, package absence, signing trust-key state, and saved connection settings remain to be confirmed. Per the owner, this is a first install and there is no prior HTP-1 package version to roll back to.
-- The project record says the HA100 supports Protocols 1–5; the future preflight rechecks that claim on the actual runtime. This package itself declares Protocol 2.
-- The prepared APK is an old build from 2026-11-19. Its expected hash matches locally, but no claim is made that it includes changes newer than that build or that it has been tested with physical hardware.
+- The HA100 has been reported to support Protocols 1–5. The future preflight must verify Protocol 3 specifically on the actual runtime; Protocol 3 is the required package compatibility gate.
+- No P3 APK has been built, so its SHA-256 is pending. Package admission and physical HTP-1 behavior remain unverified.
 - No production log retrieval mechanism was found in the inspected instructions; avoid guessed `logread`, `journalctl`, service, or file-path commands.
-- Packaging previously completed with warnings recorded in `DEVELOPMENT_STATUS.md`. The build script still prints a stale scaffold warning. Neither warning proves a device failure, and neither is resolved by APK signature/admission success.
+- Packaging previously completed with warnings recorded in `DEVELOPMENT_STATUS.md`. A successful build/package does not establish physical HTP-1 functionality or validate the device response to commands.
 - Before deployment, the preflight must confirm the package is absent; if it is present, stop. The existing verified APK version is used as-is. Deployment itself requires a separate explicit go-ahead.
 
 ## Sources inspected
 
-- Project `tools/build-deploy.sh:11-13, 141-160`: target default, protocol support probe, public-key staging, APK transfer, signed sideload, and installed-version check.
+- Project `tools/build-deploy.sh`: target default, Protocol 3 support probe, public-key staging, APK transfer with local/remote SHA-256 gate, signed sideload, and installed-version check.
 - CouchOS `docs/development/packaging.md:144-215`: supported SSH/sideload procedure, Alpine-vs-initramfs path distinction, and warning against direct `apk add`.
 - CouchOS `docs/integration-packages.md:253-274`: CLI command set, immutable slots, protocol handshake, saved-setting check, and rollback semantics.
 - CouchOS `docs/integration-management.md:17-25, 90-101`: install/update/previous-version UI and version immutability.

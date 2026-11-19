@@ -3,7 +3,7 @@
 ## Repository snapshot
 
 - Branch: `feature/htp1-state-sync`
-- HEAD: `bd0485f9fdf1d9f008231bf04244de552bc3a3bb` — “Prepare HTP-1 deployment for key-only HA100 SSH”
+- Latest reviewed baseline: P3 migration commit `096d8d9cf83c54b27858ac9260f9a2ce91a8af69` — “Add Protocol 3 custom upmix commands”.
 - Main remains at its original scaffold commit: `00b60da88f89800f861062f68bd5cd007973877e` (`Initial HTP-1 integration scaffold`).
 - Protocol 3 runtime support is confirmed by the reviewed SDK/source, and the
   HA100 runtime is reported to support Protocols 1 through 5. P3 package
@@ -51,7 +51,9 @@ The packaging mismatch was corrected earlier by changing only `plugin.json`'s
 `executable` field to `bin/couch-plugin-monoprice-htp1`. The last recorded APK
 was built before this Protocol 3 migration, when the manifest declared
 Protocol 2. It is stale and must not be used to validate or deploy this P3
-implementation. No new APK was packaged for this change.
+implementation. No P3 APK has been built; its SHA-256 is pending. The build
+script checksum gate and deployment documentation safeguards must be reviewed
+before creating a fresh P3 APK.
 
 The previous APK record was:
 
@@ -68,20 +70,24 @@ APK. No Protocol 3 package has been deployed.
 The workflow completed with warnings: Alpine `abuild` reported that the
 payload is not in `$source/$install/$triggers`, that no maintainer is set, and
 that the local APKINDEX was unavailable from its cache before proceeding. The
-build script also printed its existing post-package warning that this scaffold
-has a placeholder executable and empty manifest; that warning is stale relative
-to the current implementation and manifest. These warnings did not prevent APK
-creation or signing. Packaging success does not establish device functionality.
+earlier build script output also included an obsolete post-package warning about
+a placeholder executable and empty manifest. The deployment-preparation change
+replaces that warning with an accurate statement that packaging does not
+establish physical HTP-1 functionality or validate device command responses.
+These warnings did not prevent the prior APK creation or signing. Packaging
+success does not establish device functionality.
 
 ## Outstanding work and next steps
 
-1. Run the established packaging workflow to create a fresh signed Protocol 3
-   APK; review packaging warnings and verify the artifact's manifest/protocol.
-2. Validate P3 package admission on the HA100 without assuming packaging proves
-   runtime behavior.
-3. On the HTP-1, verify each upmix patch/value and its observed resulting state
-   before treating the controls as hardware-validated.
-4. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
+1. Complete and review the deployment-script checksum safeguard and deployment
+   documentation updates before building a fresh signed P3 APK.
+2. Build the P3 APK, record its SHA-256, and review package warnings and
+   manifest/protocol contents.
+3. After separate deployment approval, validate P3 package admission on the
+   HA100 without assuming packaging proves runtime behavior.
+4. After separate physical-validation approval, verify each upmix patch/value
+   and observed result on the HTP-1.
+5. Consider Dirac, night mode, PEQ, and seat-shaker features separately if they
    remain in scope; do not infer `off`/`mono` behavior.
 
 ## Uncertainties
