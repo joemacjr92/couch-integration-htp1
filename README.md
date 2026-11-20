@@ -1,20 +1,15 @@
-# CouchOS Monoprice HTP-1 integration
+# CouchOS Monoprice HTP-1 Integration
 
-A Rust CouchOS integration for the Monoprice HTP-1. It connects to the receiver
-at `/ws/controller` over WebSocket and provides power, volume, mute, visible
-input selection, status reporting, and five tested Protocol 3 upmixer commands.
+A Rust integration for the Monoprice HTP-1 home theater processor. It connects
+to the HTP-1 over your local network and provides power, volume, mute, input
+selection, status reporting, and supported upmixer commands.
 
-## Trusted repository installation
+## Installation
 
-After the first approved tagged release publishes it, the preview feed will be
-available at:
+### 1. Add the HTP-1 package repository
 
-```text
-https://joemacjr92.github.io/couch-integration-htp1/preview
-```
-
-After publication, add the feed in CouchOS **Integrations → Add a custom
-repository** using:
+In CouchOS, open **Integrations** and choose **Add a custom repository**. Enter
+these values:
 
 | Field | Value |
 | --- | --- |
@@ -23,58 +18,90 @@ repository** using:
 | Base URL | `https://joemacjr92.github.io/couch-integration-htp1/preview` |
 | Public signing key | [monoprice-htp1-repository-public.pem](keys/monoprice-htp1-repository-public.pem) |
 
-Before trusting it, select **Check public-key fingerprint** and compare the
-displayed SHA-256 with the normalized PEM fingerprint published here:
+The public key is also available as a [raw PEM file](https://raw.githubusercontent.com/joemacjr92/couch-integration-htp1/main/keys/monoprice-htp1-repository-public.pem).
 
-```text
-ad5ecdedddfbf48e8597053c2df0679c858af9ff4cdff879df50b9e33eeac79d
-```
+### 2. Verify and trust the signing key
 
-This is SHA-256 of the normalized PEM text CouchOS fingerprints, not the DER
-public-key fingerprint. If the values match, select **Trust repository**, then
-**Refresh packages**. Install **Monoprice HTP-1** from the preview catalog.
-Updates are offered by the Integrations page after refresh and require an
-explicit **Update** action; they are not automatic.
+1. Paste the contents of the public PEM file into CouchOS.
+2. Select **Check public-key fingerprint**.
+3. Confirm that CouchOS displays this normalized PEM SHA-256 fingerprint:
 
-The first repository package is version `0.1.1` (`v0.1.1` release tag). Do not
-rebuild or republish version `0.1.0` with different bytes. An integration
-installed by sideload may not have a recorded repository origin. Adding this
-feed alone may therefore not create an Update action for that installation;
-review the package-source migration before removing or reinstalling a working
-integration. CouchOS removal preserves saved connections, but no migration is
-performed automatically by this project.
+   `ad5ecdedddfbf48e8597053c2df0679c858af9ff4cdff879df50b9e33eeac79d`
 
-## Capabilities
+4. If it matches, select **Trust repository**.
+5. Refresh packages and install **Monoprice HTP-1**.
 
-- Power on/off; volume up/down in 1 dB steps; mute toggle/on/off.
-- Dynamic selection of visible HTP-1 inputs.
-- Power, mute, input, and volume status.
-- Protocol 3 custom commands: Auro, Dolby, DTS, Native, and Stereo upmix.
-- Dirac, night mode, PEQ, and seat-shaker controls are not implemented.
+Always compare the fingerprint shown by CouchOS before trusting the repository.
+The value above is the normalized PEM fingerprint CouchOS displays; it is not
+the DER public-key fingerprint.
 
-The owner reports successful hardware validation of the functional 0.1.0
-baseline, including the five upmixer commands. The published repository release
-is a separately versioned package; see [development status](DEVELOPMENT_STATUS.md)
-and the [trusted-repository workflow notes](docs/TRUSTED_REPOSITORY.md).
+If you already have the locally sideloaded HTP-1 integration installed, remove
+that local package before installing the repository-managed package with the
+same integration ID. Adding this repository does not automatically convert a
+sideloaded installation into a repository-managed one.
 
-## Development
+### 3. Configure the HTP-1 connection
 
-Both Couch crates remain pinned to
-`e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81`. Run locally:
+After installation, configure the HTP-1 connection in CouchOS with:
 
-```sh
-cargo fmt --check
-cargo test
-cargo check
-```
+- **Device address** — the HTP-1 IP address or hostname.
+- **WebSocket port** — `80` by default.
+- **TLS** — optional and disabled by default.
 
-The tagged GitHub Actions workflow builds the Protocol 3 ARMv7 APK, checks its
-package admission, and publishes the signed preview feed. A weekly workflow
-renews signed feed metadata without rebuilding packages. The local
-`tools/build-deploy.sh` remains the separate build/sideload path; the GitHub
-workflows do not connect to or deploy to an HA100.
+For repository setup details, see the
+[trusted-repository guide](docs/TRUSTED_REPOSITORY.md).
 
-## Attribution
+## Features
 
-- Meir Miyara created the original [Unfolded Circle HTP-1 integration](https://github.com/mase1981/uc-intg-monoprice-htp1), which is the reference for this Rust adaptation.
-- dangerouslaser created CouchOS and maintains its SDK and integration ecosystem.
+- Power on and power off.
+- Volume up and down in 1 dB steps.
+- Mute, mute on, and mute off.
+- Select HTP-1 inputs that the device marks as visible.
+- Report power, mute, current input, and volume status.
+- Protocol 3 custom upmixer commands:
+  - Auro-3D (`auro`) — `x:upmix-auro`
+  - Dolby Surround (`dolby`) — `x:upmix-dolby`
+  - DTS Neural:X (`dts`) — `x:upmix-dts`
+  - Native (`native`) — `x:upmix-native`
+  - Stereo (`stereo`) — `x:upmix-stereo`
+
+All five custom upmixer commands have been tested with an HTP-1. The complete
+repository-managed version `0.1.1` installation has also been tested
+successfully on the CouchOS remote.
+
+## Compatibility
+
+- **Device:** Monoprice HTP-1.
+- **CouchOS protocol:** Protocol 3; minimum core protocol requirement is 3.
+- **Package architecture:** ARMv7.
+
+No firmware-version range is specified. Compatibility with other Monoprice
+products or other receivers is not claimed.
+
+## Not Currently Supported
+
+- Dirac Live calibration selection.
+- Night mode.
+- PEQ / parametric equalizer controls.
+- Seat-shaker controls.
+- A dynamic upmixer selector or dropdown. The five supported modes are exposed
+  as custom commands, not as a live selector.
+
+## Security
+
+The integration communicates with the HTP-1 over your local network. By
+default, the connection uses port `80` with TLS disabled; TLS can be enabled
+in the connection settings. Keep the HTP-1 and CouchOS on a trusted local
+network.
+
+The repository publishes only the public signing key so CouchOS users can
+verify the package feed. The corresponding private signing key is not included
+in the repository.
+
+## Credits and Acknowledgements
+
+- **[dangerouslaser](https://github.com/dangerouslaser)** created CouchOS and
+  maintains its SDK and integration ecosystem.
+- **[Meir Miyara / Mase](https://github.com/mase1981)** created the original
+  [Unfolded Circle HTP-1 integration](https://github.com/mase1981/uc-intg-monoprice-htp1).
+  This project is a Rust port and adaptation of that work.
