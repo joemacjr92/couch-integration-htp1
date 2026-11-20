@@ -44,12 +44,18 @@ jobs:
             exit 1
           fi
 
-      - name: Check out HTP-1 integration
+      - name: Check out HTP-1 integration source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
           path: couch-integration-htp1
           persist-credentials: true
+
+      - name: Check out HTP-1 workflow validation tools
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: htp1-workflow-tools
 
       - name: Check out pinned Couch SDK
         uses: actions/checkout@v4
@@ -83,78 +89,22 @@ jobs:
           path: existing-feed
 
       - name: Validate existing signed feed history
-        if: steps.feed.outputs.exists == 'true'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          FEED_DIR="$GITHUB_WORKSPACE/existing-feed/preview/armv7"
-          FEED_JSON="$FEED_DIR/feed.json"
-          FEED_SIGNATURE="$FEED_DIR/feed.json.sig"
-          APK_INDEX="$FEED_DIR/APKINDEX.tar.gz"
-          PUBLIC_KEY="$GITHUB_WORKSPACE/couch-integration-htp1/keys/monoprice-htp1-repository-public.pem"
-          PACKAGE_LIST="$RUNNER_TEMP/htp1-verified-packages.tsv"
-
-          for required in "$FEED_JSON" "$FEED_SIGNATURE" "$APK_INDEX" "$PUBLIC_KEY"; do
-            test -s "$required" || { echo "Missing or empty existing feed file: $required" >&2; exit 1; }
-          done
-
-          jq -e '
-            .schema == 1 and
-            .channel == "preview" and
-            (.sequence | type == "number" and . >= 1 and . == floor and . < 2147483647) and
-            .index.path == "APKINDEX.tar.gz" and
-            (.index.size | type == "number" and . > 0 and . == floor) and
-            (.index.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
-            (.packages | type == "array" and length > 0) and
-            all(.packages[];
-              .id == "monoprice-htp1" and
-              .protocol_version == 3 and
-              .min_core_protocol_version == 3 and
-              (.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and
-              (.apk | type == "string") and
-              (.apk == ("couch-integration-monoprice-htp1-" + .version + "-r0.apk")) and
-              (.size | type == "number" and . > 0 and . == floor) and
-              (.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
-            ) and
-            ([.packages[].apk] | unique | length) == (.packages | length)
-          ' "$FEED_JSON" >/dev/null
-
-          openssl dgst -sha256 -verify "$PUBLIC_KEY" \
-            -signature "$FEED_SIGNATURE" "$FEED_JSON" >/dev/null
-
-          INDEX_SIZE="$(stat -c '%s' "$APK_INDEX")"
-          INDEX_SHA256="$(sha256sum "$APK_INDEX" | awk '{print $1}')"
-          EXPECTED_INDEX_SIZE="$(jq -er '.index.size | numbers' "$FEED_JSON")"
-          EXPECTED_INDEX_SHA256="$(jq -er '.index.sha256 | strings' "$FEED_JSON")"
-          [[ "$INDEX_SIZE" == "$EXPECTED_INDEX_SIZE" && "$INDEX_SHA256" == "$EXPECTED_INDEX_SHA256" ]] || {
-            echo "Existing APKINDEX does not match the signed feed metadata." >&2
-            exit 1
-          }
-
-          jq -er '.packages[] | [.version, .apk, (.size | tostring), .sha256] | @tsv' \
-            "$FEED_JSON" > "$PACKAGE_LIST"
-          while IFS=$'\t' read -r METADATA_VERSION APK_NAME EXPECTED_SIZE EXPECTED_SHA256; do
-            APK_VERSION="${APK_NAME#couch-integration-monoprice-htp1-}"
-            APK_VERSION="${APK_VERSION%-r0.apk}"
-            [[ "$APK_VERSION" == "$METADATA_VERSION" ]] || {
-              printf 'Existing feed version %s does not match APK filename %s.\n' \
-                "$METADATA_VERSION" "$APK_NAME" >&2
-              exit 1
-            }
-            APK_PATH="$FEED_DIR/$APK_NAME"
-            [[ -s "$APK_PATH" ]] || {
-              printf 'Existing feed APK is missing or empty: %s\n' "$APK_NAME" >&2
-              exit 1
-            }
-            APK_SIZE="$(stat -c '%s' "$APK_PATH")"
-            APK_SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
-            [[ "$APK_SIZE" == "$EXPECTED_SIZE" && "$APK_SHA256" == "$EXPECTED_SHA256" ]] || {
-              printf 'Existing feed APK does not match signed metadata: %s\n' "$APK_NAME" >&2
-              exit 1
-            }
-          done < "$PACKAGE_LIST"
-
-          echo "Validated signed existing HTP-1 feed history and all package artifacts."
+          VALIDATOR=("$GITHUB_WORKSPACE/htp1-workflow-tools/tools/validate-feed-history.sh"
+            "$GITHUB_WORKSPACE/existing-feed/preview/armv7"
+            "$GITHUB_WORKSPACE/htp1-workflow-tools/keys/monoprice-htp1-repository-public.pem"
+            "$VERSION")
+          # Rebuilding an already-published version is allowed only in an
+          # explicit manual dry run. All publication paths remain strict.
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" == "true" ]]; then
+            VALIDATOR+=(--allow-existing-version)
+          fi
+          bash "${VALIDATOR[@]}"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -312,7 +262,7 @@ jobs:
 
           PRIVATE_DER_SHA256="$(openssl pkey -in "$RUNNER_TEMP/apk-keys/developer.rsa" -pubout -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
           SECRET_PUBLIC_DER_SHA256="$(openssl pkey -pubin -in "$RUNNER_TEMP/apk-keys/developer.rsa.pub" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
-          REPOSITORY_PUBLIC_DER_SHA256="$(openssl pkey -pubin -in "$GITHUB_WORKSPACE/couch-integration-htp1/keys/monoprice-htp1-repository-public.pem" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
+          REPOSITORY_PUBLIC_DER_SHA256="$(openssl pkey -pubin -in "$GITHUB_WORKSPACE/htp1-workflow-tools/keys/monoprice-htp1-repository-public.pem" -outform DER 2>/dev/null | sha256sum | awk '{print $1}')"
           test "$PRIVATE_DER_SHA256" = "$SECRET_PUBLIC_DER_SHA256"
           test "$SECRET_PUBLIC_DER_SHA256" = "$REPOSITORY_PUBLIC_DER_SHA256"
 
