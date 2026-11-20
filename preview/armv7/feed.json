@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "channel": "preview",
+  "sequence": 1,
+  "issued": "2026-11-20T00:09:46Z",
+  "expires": "2026-12-20T00:09:46Z",
+  "index": {
+    "path": "APKINDEX.tar.gz",
+    "size": 980,
+    "sha256": "ed8b5c526aead64cb09326dc4bbb379d123af1745a0869496ce3334cc1d9e198"
+  },
+  "packages": [
+    {
+      "id": "monoprice-htp1",
+      "version": "0.1.1",
+      "apk": "couch-integration-monoprice-htp1-0.1.1-r0.apk",
+      "size": 654141,
+      "sha256": "52029b809c81f1bf299158cec4a277116d78eff559be852c1361ad030650a045",
+      "protocol_version": 3,
+      "min_core_protocol_version": 3
+    }
+  ]
+}
