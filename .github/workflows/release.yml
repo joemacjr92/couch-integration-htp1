@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing version tag to release (for example v0.1.1)
+        description: Existing version tag to build (for example v0.1.1)
         required: true
         type: string
+      dry_run:
+        description: Build and validate without publishing the feed or GitHub Release
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -167,6 +172,7 @@ jobs:
         env:
           PUBLISHED_FEED_EXISTS: ${{ steps.feed.outputs.exists }}
           RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           PLUGIN="$GITHUB_WORKSPACE/couch-integration-htp1"
@@ -224,9 +230,16 @@ jobs:
               exit 1
             fi
             LATEST="$(jq -r '.packages[] | select(.id == "monoprice-htp1") | .version' "$PREVIOUS" | sort -V | tail -n1)"
-            if [[ -z "$LATEST" || "$(printf '%s\n' "$LATEST" "$VERSION" | sort -V | tail -n1)" != "$VERSION" || "$VERSION" == "$LATEST" ]]; then
+            if [[ -z "$LATEST" || "$(printf '%s\n' "$LATEST" "$VERSION" | sort -V | head -n1)" != "$LATEST" ]]; then
+              echo "Release version $VERSION is older than the published HTP-1 version $LATEST."
+              exit 1
+            fi
+            if [[ "$VERSION" == "$LATEST" && ! ( "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" == "true" ) ]]; then
               echo "Release version $VERSION must be newer than the published HTP-1 version $LATEST."
               exit 1
+            fi
+            if [[ "$VERSION" == "$LATEST" ]]; then
+              echo "Manual dry run: rebuilding existing HTP-1 version $VERSION; publishing remains disabled."
             fi
           elif [[ "$VERSION" != "0.1.1" ]]; then
             echo "The first trusted-repository release must be v0.1.1; refusing $RELEASE_TAG."
@@ -457,6 +470,7 @@ jobs:
           ls -lh "$REPO_ARCH"
 
       - name: Publish repository to GitHub Pages
+        if: github.event_name != 'workflow_dispatch' || inputs.dry_run != true
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -466,6 +480,7 @@ jobs:
           commit_message: "Publish HTP-1 integration feed"
 
       - name: Publish GitHub Release
+        if: github.event_name != 'workflow_dispatch' || inputs.dry_run != true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
