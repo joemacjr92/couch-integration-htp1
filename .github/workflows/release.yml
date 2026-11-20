@@ -234,11 +234,11 @@ jobs:
               echo "Release version $VERSION is older than the published HTP-1 version $LATEST."
               exit 1
             fi
-            if [[ "$VERSION" == "$LATEST" && ! ( "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" == "true" ) ]]; then
-              echo "Release version $VERSION must be newer than the published HTP-1 version $LATEST."
-              exit 1
-            fi
             if [[ "$VERSION" == "$LATEST" ]]; then
+              if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" || "$DRY_RUN" != "true" ]]; then
+                echo "Release version $VERSION must be newer than the published HTP-1 version $LATEST."
+                exit 1
+              fi
               echo "Manual dry run: rebuilding existing HTP-1 version $VERSION; publishing remains disabled."
             fi
           elif [[ "$VERSION" != "0.1.1" ]]; then
