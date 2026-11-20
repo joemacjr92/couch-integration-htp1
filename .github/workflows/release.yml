@@ -91,10 +91,11 @@ jobs:
       - name: Validate existing signed feed history
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
           VALIDATOR=("$GITHUB_WORKSPACE/htp1-workflow-tools/tools/validate-feed-history.sh"
             "$GITHUB_WORKSPACE/existing-feed/preview/armv7"
             "$GITHUB_WORKSPACE/htp1-workflow-tools/keys/monoprice-htp1-repository-public.pem"
