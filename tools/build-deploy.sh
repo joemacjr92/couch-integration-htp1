@@ -10,6 +10,7 @@ SDK_ROOT="$(cd "$PLUGIN_ROOT/../couch-sdk-reference" 2>/dev/null && pwd -P)" || 
 }
 TARGET="armv7-unknown-linux-musleabihf"
 ID="monoprice-htp1"
+SDK_REVISION="e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81"
 DEVICE_DEFAULT="10.0.0.25"
 
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-podman}"
@@ -36,7 +37,12 @@ need() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 [[ -f "$SDK_ROOT/tools/arm-cc-env.sh" && -f "$SDK_ROOT/tools/fetch-zig.sh" ]] || die "SDK checkout/tools not found at $SDK_ROOT"
 [[ -f "$SDK_ROOT/tools/integrations/build-apk.sh" ]] || die "SDK APK builder not found."
 
-for c in cargo rustup curl tar sha256sum file stat sed grep head "$CONTAINER_ENGINE"; do need "$c"; done
+SDK_ACTUAL_REVISION="$(git -C "$SDK_ROOT" rev-parse HEAD 2>/dev/null)" ||
+  die "SDK checkout at $SDK_ROOT is not a valid Git working tree."
+[[ "$SDK_ACTUAL_REVISION" == "$SDK_REVISION" ]] ||
+  die "SDK revision mismatch: expected $SDK_REVISION, found $SDK_ACTUAL_REVISION. Check out the reviewed SDK revision before building."
+
+for c in cargo rustup git curl tar sha256sum file stat sed grep head "$CONTAINER_ENGINE"; do need "$c"; done
 
 MANIFEST_ID="$(sed -nE 's/^[[:space:]]*"id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$PLUGIN_ROOT/plugin.json" | head -n1)"
 [[ "$MANIFEST_ID" == "$ID" ]] || die "Expected manifest id '$ID', found '${MANIFEST_ID:-<missing>}'"
