@@ -3,7 +3,7 @@
 ## Repository snapshot
 
 - Branch: `main`
-- HEAD: `bf622891a830358db55e0d3dbf3f5e1fd35f7db7` — “Merge HTP-1 functional baseline”.
+- HEAD: `f82f45a2fa707fb0afd0ef1e4cf98978c316cc2d` — “Fix APKINDEX signing key path in release workflow”.
 - Functional baseline tag: `htp1-functional-0.1.0-r0` targets `7c1cf0baff71635ee1c57f435b0331d29d21eb04`; the Protocol 3 implementation is merged into `main`.
 - Protocol 3 runtime support is confirmed by the reviewed SDK/source, and the
   HA100 runtime is reported to support Protocols 1 through 5. The owner reports
@@ -12,7 +12,7 @@
   `min_core_protocol_version` are both 3.
 - Both Couch dependencies are pinned to
   `e7fc36cd90faa6d6b2e3e8a733c28a3fed833d81`.
-- Snapshot updated 2026-11-19. Trusted-repository publishing work below is local and uncommitted.
+- Snapshot updated 2026-11-19. The manual release trigger described below is local and uncommitted.
 
 ## Implemented
 
@@ -163,9 +163,12 @@ successful key-only login. The private key remains local.
   `ad5ecdedddfbf48e8597053c2df0679c858af9ff4cdff879df50b9e33eeac79d`; the
   private key remains outside the repository.
 - Updated the README with repository onboarding and linked publishing notes.
-  GitHub Actions have not been run, no `v0.1.1` package has been built, and
-  nothing has been published to Pages or a GitHub Release. No HA100 command or
-  deployment was performed.
+  The first `v0.1.1` Actions run failed while verifying the signed APKINDEX
+  because the signer-named public key was installed under the wrong filename.
+  The workflow key-path correction is committed on `main`; no successful
+  release has run, no `v0.1.1` package has been built, and nothing has been
+  published to Pages or a GitHub Release. No HA100 command or deployment was
+  performed.
 - Rust runtime behavior and the SDK pin are unchanged; `tools/build-deploy.sh`
   is unchanged.
 - Hardened trusted-release handling: `git ls-remote` distinguishes a missing
@@ -178,3 +181,9 @@ successful key-only login. The private key remains local.
   and rejection of invalid feed signatures, index/APK hashes, or signing-key
   pairs. The Alpine `apk verify` commands were not executed locally; no APK was
   built and no publishing or device operation was performed.
+- Added a manual `workflow_dispatch` path locally for recovery of an existing
+  version tag. It is restricted to dispatches from `main`, checks out the
+  supplied remote tag as release source, verifies that the tag resolves to
+  that checkout, and continues through the existing first-release/history and
+  manifest/package version checks. The original `v*` tag-push trigger remains
+  in place. This workflow change has not been committed, dispatched, or run.
